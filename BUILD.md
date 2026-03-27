@@ -89,6 +89,8 @@ Default runtime paths:
 - helper EXE: `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`
 - native widget DLL: `tools/osmand_render_helper_native/dist-msvc/osmand_native_widget.dll` or MinGW `dist`
 
+The bundled `World_basemap_2.obf` file is only a default demo dataset. You can replace it with another OsmAnd `.obf` file, select a different file from the preview window, or point the runtime to a custom path through the environment variables below. Additional `.obf` downloads are available from the official OsmAnd download list: [https://download.osmand.net/list.php](https://download.osmand.net/list.php).
+
 Override environment variables if needed:
 
 - `IPHOTO_OSMAND_OBF_PATH`
