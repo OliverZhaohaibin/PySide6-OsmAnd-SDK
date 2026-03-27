@@ -1,0 +1,86 @@
+#include "ObfRoutingSectionReader.h"
+#include "ObfRoutingSectionReader_P.h"
+
+#include "ObfReader.h"
+
+OsmAnd::ObfRoutingSectionReader::ObfRoutingSectionReader()
+{
+}
+
+OsmAnd::ObfRoutingSectionReader::~ObfRoutingSectionReader()
+{
+}
+
+void OsmAnd::ObfRoutingSectionReader::loadRoads(
+    const std::shared_ptr<const ObfReader>& reader,
+    const std::shared_ptr<const ObfRoutingSectionInfo>& section,
+    const RoutingDataLevel dataLevel,
+    const AreaI* const bbox31 /*= nullptr*/,
+    QList< std::shared_ptr<const OsmAnd::Road> >* resultOut /*= nullptr*/,
+    const FilterRoadsByIdFunction filterById /*= nullptr*/,
+    const VisitorFunction visitor /*= nullptr*/,
+    DataBlocksCache* cache /*= nullptr*/,
+    QList< std::shared_ptr<const DataBlock> >* outReferencedCacheEntries /*= nullptr*/,
+    const std::shared_ptr<const IQueryController>& queryController /*= nullptr*/,
+    ObfRoutingSectionReader_Metrics::Metric_loadRoads* const metric /*= nullptr*/)
+{
+    ObfRoutingSectionReader_P::loadRoads(
+        *reader->_p,
+        section,
+        dataLevel,
+        bbox31,
+        resultOut,
+        filterById,
+        visitor,
+        cache,
+        outReferencedCacheEntries,
+        queryController,
+        metric);
+}
+
+void OsmAnd::ObfRoutingSectionReader::loadTreeNodes(
+    const std::shared_ptr<const ObfReader>& reader,
+    const std::shared_ptr<const ObfRoutingSectionInfo>& section,
+    const RoutingDataLevel dataLevel,
+    QList< std::shared_ptr<const ObfRoutingSectionLevelTreeNode> >* resultOut)
+{
+    ObfRoutingSectionReader_P::loadTreeNodes(
+        *reader->_p,
+        section,
+        dataLevel,
+        resultOut);
+}
+
+
+OsmAnd::ObfRoutingSectionReader::DataBlock::DataBlock(
+    const DataBlockId id_,
+    const RoutingDataLevel dataLevel_,
+    const AreaI area31_,
+    const QList< std::shared_ptr<const OsmAnd::Road> >& roads_)
+    : id(id_)
+    , dataLevel(dataLevel_)
+    , area31(area31_)
+    , roads(roads_)
+{
+}
+
+OsmAnd::ObfRoutingSectionReader::DataBlock::~DataBlock()
+{
+}
+
+OsmAnd::ObfRoutingSectionReader::DataBlocksCache::DataBlocksCache()
+{
+}
+
+OsmAnd::ObfRoutingSectionReader::DataBlocksCache::~DataBlocksCache()
+{
+}
+
+bool OsmAnd::ObfRoutingSectionReader::DataBlocksCache::shouldCacheBlock(
+    const DataBlockId id,
+    const RoutingDataLevel dataLevel,
+    const AreaI blockBBox31,
+    const AreaI* const queryArea31 /*= nullptr*/) const
+{
+    return true;
+}

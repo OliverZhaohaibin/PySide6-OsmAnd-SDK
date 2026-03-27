@@ -1,0 +1,7 @@
+<svg width="48" height="48" fill="none" version="1.1" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+ <namedview bordercolor="#666666" borderopacity="1" gridtolerance="10" guidetolerance="10" objecttolerance="10" pagecolor="#ffffff" showgrid="true">
+  <grid empspacing="10" type="xygrid"/>
+ </namedview>
+ <rect x="21" y="9" width="6" height="35" ry="0" color="#000000" color-rendering="auto" fill="#ffffff" image-rendering="auto" shape-rendering="auto" solid-color="#000000" style="isolation:auto;mix-blend-mode:normal;paint-order:normal"/>
+ <path d="m24 4c-6.942 0.012004-13.279 2.91-18 8h36c-4.7238-5.0935-11.053-7.9918-18-8z" color="#000000" color-rendering="auto" fill="#ffffff" image-rendering="auto" shape-rendering="auto" solid-color="#000000" style="isolation:auto;mix-blend-mode:normal;paint-order:normal"/>
+</svg>

@@ -1,0 +1,21 @@
+PySide6-OsmAnd-SDK
+Copyright (C) 2026 OliverZhaohaibin
+
+This repository is distributed under the GNU General Public License,
+version 3 or (at your option) any later version, because it redistributes
+copied OsmAnd source trees together with derivative PySide6 integration
+code and build tooling under GPL-compatible terms.
+
+The complete GNU GPL v3 license text is provided in:
+
+- COPYING
+
+Vendored upstream license files are preserved in:
+
+- vendor/osmand/core/LICENSE
+- vendor/osmand/core-legacy/LICENSE
+- vendor/osmand/resources/LICENSE
+
+Additional provenance and packaging notes are documented in:
+
+- NOTICE.md

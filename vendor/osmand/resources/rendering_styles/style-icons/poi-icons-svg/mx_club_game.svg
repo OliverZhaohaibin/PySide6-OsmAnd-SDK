@@ -1,0 +1,10 @@
+<svg width="48" height="48" fill="none" version="1.1" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+ <namedview bordercolor="#666666" borderopacity="1" gridtolerance="10" guidetolerance="10" objecttolerance="10" pagecolor="#ffffff" showgrid="true">
+  <grid spacingx="2" spacingy="2" type="xygrid"/>
+ </namedview>
+ <g fill="#ffffff">
+  <path d="m30 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 12v-5a1 1 0 1 0 2 0v-4a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0v5z" clip-rule="evenodd" fill-rule="evenodd"/>
+  <path d="m42 6a2 2 0 1 1-4 0 2 2 0 0 1 4 0zm0 12v-5a1 1 0 1 0 2 0v-4a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0v5z" clip-rule="evenodd" fill-rule="evenodd"/>
+  <path d="m12 22c-5.5715-2.38e-4 -10 4.4096-10 10-2.385e-4 5.5904 4.4076 10 9.998 10h0.001953c3.2211-0.0032 6.2065-1.4298 8.1094-4h7.7773c1.9038 2.5715 4.8906 3.9982 8.1133 4 5.5904 2.39e-4 10-4.4096 10-10 2.39e-4 -5.5904-4.4285-10-10-10h-24zm-2 4h4v4h4v4h-4v4h-4v-4h-4v-4h4v-4zm26 0a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2zm-4 4a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2zm8 0a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2zm-4 4a2 2 0 0 1 2 2 2 2 0 0 1-2 2 2 2 0 0 1-2-2 2 2 0 0 1 2-2z" color="#000000" color-rendering="auto" dominant-baseline="auto" image-rendering="auto" shape-rendering="auto" solid-color="#000000" style="font-feature-settings:normal;font-variant-alternates:normal;font-variant-caps:normal;font-variant-ligatures:normal;font-variant-numeric:normal;font-variant-position:normal;isolation:auto;mix-blend-mode:normal;paint-order:normal;shape-padding:0;text-decoration-color:#000000;text-decoration-line:none;text-decoration-style:solid;text-indent:0;text-orientation:mixed;text-transform:none;white-space:normal"/>
+ </g>
+</svg>

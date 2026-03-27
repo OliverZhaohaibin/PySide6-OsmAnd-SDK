@@ -1,0 +1,31 @@
+diff -rupN upstream.original/icu4c/source/i18n/rbnf.cpp upstream.patched/icu4c/source/i18n/rbnf.cpp
+--- upstream.original/icu4c/source/i18n/rbnf.cpp	2013-10-04 23:48:44.000000000 +0300
++++ upstream.patched/icu4c/source/i18n/rbnf.cpp	2014-02-20 23:09:34.872443400 +0200
+@@ -31,9 +31,11 @@
+ // debugging
+ // #define DEBUG
+ 
++#if 0
+ #ifdef DEBUG
+ #include "stdio.h"
+ #endif
++#endif
+ 
+ #define U_ICUDATA_RBNF U_ICUDATA_NAME U_TREE_SEPARATOR_STRING "rbnf"
+ 
+@@ -551,6 +555,7 @@ LocDataParser::parseError(const char* /*
+     pe.postContext[limit-p] = 0;
+     pe.offset = (int32_t)(p - data);
+     
++#if 0
+ #ifdef DEBUG
+     fprintf(stderr, "%s at or near character %d: ", str, p-data);
+ 
+@@ -570,6 +575,7 @@ LocDataParser::parseError(const char* /*
+     fprintf(stderr, "%s\n", buf);
+     fflush(stderr);
+ #endif
++#endif
+     
+     uprv_free(data);
+     data = NULL;

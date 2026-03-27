@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+/.venv/
+
+# Local IDE files
+/.idea/
+/.vscode/
+
+# Build outputs
+/build/
+/dist/
+/tools/osmand_render_helper_native/build/
+/tools/osmand_render_helper_native/build_manual/
+/tools/osmand_render_helper_native/build_mingw_make/
+/tools/osmand_render_helper_native/build_trace2/
+/tools/osmand_render_helper_native/dist/
+/tools/osmand_render_helper_native/dist-msvc/
+/tools/osmand_render_helper_native/logs/
+/tools/osmand_render_helper_native/qt6-msvc-importlibs/
+
+# Native build logs
+/tools/osmand_render_helper_native/*.log

@@ -1,0 +1,348 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.3'
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'ivy-publish'
+
+import org.apache.tools.ant.taskdefs.condition.Os
+import org.gradle.internal.os.OperatingSystem
+import java.nio.file.Files
+import java.util.zip.Deflater
+import java.nio.ByteBuffer
+
+def generatedOsmAndAssetsDir = layout.buildDirectory.dir("generated/osmand_assets").get().asFile
+def rawOsmAndAssetsDir    = layout.buildDirectory.dir("generated/raw_osmand_assets").get().asFile
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+android {
+    namespace "net.osmand.core"
+    compileSdk 35
+    buildToolsVersion = "35.0.0"
+
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 35
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    // Enable the buildConfig feature, which is required for custom buildConfigFields.
+    buildFeatures {
+        buildConfig = true
+    }
+
+    sourceSets {
+        main {
+            manifest.srcFile "AndroidManifest.xml"
+            java.srcDirs = ["./src", "./gen/java"]
+            jniLibs.srcDirs = ["./jniLibs/NDK", "./jniLibs/Qt"]
+            assets.srcDirs = ["./assets", generatedOsmAndAssetsDir]
+        }
+    }
+
+    aaptOptions {
+        noCompress "qz", "png"
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            jniDebuggable true
+            buildConfigField "boolean", "USE_DEBUG_LIBRARIES", "true"
+        }
+        release {
+            debuggable false
+            jniDebuggable false
+            buildConfigField "boolean", "USE_DEBUG_LIBRARIES", "false"
+        }
+    }
+}
+
+// Java sources generation tasks
+tasks.register('cleanupSwig', Delete) {
+    description "Clean-up old generated SWIG Java interface"
+    delete fileTree("./gen")
+}
+
+tasks.register('swigGenerateJava', Exec) {
+    description "Generate SWIG Java interface"
+    dependsOn cleanupSwig
+    // This makes the 'gen' directory available to the build
+    outputs.dir(file("./gen/java"))
+
+    if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+        commandLine "cmd", "/c", "bash --login " + file("../java/generate.sh").getAbsolutePath() + " " + projectDir.getAbsolutePath()
+    } else {
+        commandLine "sh", file("../java/generate.sh").getAbsolutePath(), projectDir.getAbsolutePath()
+    }
+}
+
+// NDK libraries tasks
+tasks.register('cleanupNdkSharedLibs', Delete) {
+    description "Clean-up NDK shared libraries"
+    delete "./jniLibs/NDK"
+}
+
+tasks.register('copyNdkSharedLibs', Copy) {
+    description = "Copy NDK shared libraries"
+    dependsOn cleanupNdkSharedLibs
+
+    def ndkRoot = System.getenv("ANDROID_NDK")
+
+    def osName = OperatingSystem.current()
+    def hostTag
+    if (osName.isMacOsX()) {
+        hostTag = "darwin-x86_64"
+    } else if (osName.isLinux()) {
+        hostTag = "linux-x86_64"
+    } else {
+        throw new GradleException("Unsupported OS: $osName")
+    }
+
+    def sysrootLibs = "${ndkRoot}/toolchains/llvm/prebuilt/${hostTag}/sysroot/usr/lib"
+
+    from("${sysrootLibs}/aarch64-linux-android") {
+        include "libc++_shared.so"
+        into "arm64-v8a"
+    }
+    from("${sysrootLibs}/arm-linux-androideabi") {
+        include "libc++_shared.so"
+        into "armeabi-v7a"
+    }
+    from("${sysrootLibs}/x86_64-linux-android") {
+        include "libc++_shared.so"
+        into "x86_64"
+    }
+    from("${sysrootLibs}/i686-linux-android") {
+        include "libc++_shared.so"
+        into "x86"
+    }
+
+    into "./jniLibs/NDK"
+    includeEmptyDirs = false
+}
+
+// Qt shared libraries tasks
+tasks.register('cleanupQtSharedLibs', Delete) {
+    description "Clean-up Qt shared libraries"
+    delete "./jniLibs/Qt"
+}
+
+tasks.register('copyQtSharedLibs', Copy) {
+    description "Copy Qt shared libraries"
+    dependsOn cleanupQtSharedLibs
+
+    from("../../externals/qtbase-android") {
+        include "upstream.patched.android.clang-*.shared/lib/libQt5Core.so"
+        include "upstream.patched.android.clang-*.shared/lib/libQt5Network.so"
+        include "upstream.patched.android.clang-*.shared/lib/libQt5Sql.so"
+        eachFile { fileCopyDetails ->
+            fileCopyDetails.path = fileCopyDetails.path.replaceAll(/.*upstream\.patched\.android\.clang\-(.*)\.shared\/lib\/(.*)/, '$1/$2')
+        }
+    }
+
+    into "./jniLibs/Qt"
+    includeEmptyDirs = false
+}
+
+// Qt JAR libraries tasks
+tasks.register('cleanupQtJarLibs', Delete) {
+    description "Clean-up Qt JAR libraries"
+    delete "./libs/Qt"
+}
+
+tasks.register('copyQtJarLibs', Copy) {
+    description "Copy Qt JAR libraries"
+    dependsOn cleanupQtJarLibs
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+
+    from("../../externals/qtbase-android") {
+        include "upstream.patched.android.clang-*.shared/jar/*.jar"
+        eachFile { fileCopyDetails ->
+            fileCopyDetails.path = fileCopyDetails.path.replaceAll(/.*upstream\.patched\.android\.clang\-.*\.shared\/jar\/(.*)/, '$1')
+        }
+    }
+
+    into "./libs/Qt"
+    includeEmptyDirs = false
+}
+
+tasks.register('cleanupOsmAndResources', Delete) {
+    description = "Clean-up OsmAnd resources"
+    delete rawOsmAndAssetsDir
+    delete generatedOsmAndAssetsDir
+}
+
+tasks.register('copyOsmAndResources', Copy) {
+    description = "Copy OsmAnd resources"
+    group = "build"
+    dependsOn cleanupOsmAndResources
+
+    outputs.dir(rawOsmAndAssetsDir)
+    from("../../../resources/rendering_styles") { include "default.render.xml", "default.map_styles_presets.xml"; eachFile { it.path = "map/styles/" + it.path } }
+    from("../../../resources/rendering_styles/style-icons/map-icons-svg") { include "mx_*.svg", "c_mx_*.svg"; eachFile { it.path = "map/icons/" + it.path.replaceAll(/(c_)?mx_(.*)\.svg/, '$1$2.svg') } }
+    from("../../../resources/rendering_styles/style-icons/map-shaders-svg") { include "h_*.svg", "c_h_*.svg"; eachFile { it.path = "map/shaders_and_shields/" + it.path.replaceAll(/(c_)?h_(.*)\.svg/, '$1$2.svg') } }
+    from("../../../resources/rendering_styles/stubs/[ddf=1.0]") { include "*.png"; eachFile { it.path = "[ddf=1.0]/map/stubs/" + it.path } }
+    from("../../../resources/rendering_styles/stubs/[ddf=1.5]") { include "*.png"; eachFile { it.path = "[ddf=1.5]/map/stubs/" + it.path } }
+    from("../../../resources/rendering_styles/stubs/[ddf=2.0]") { include "*.png"; eachFile { it.path = "[ddf=2.0]/map/stubs/" + it.path } }
+    from("../../../resources/rendering_styles/stubs/[ddf=3.0]") { include "*.png"; eachFile { it.path = "[ddf=3.0]/map/stubs/" + it.path } }
+    from("../../../resources/rendering_styles/stubs") { include "*.png"; eachFile { it.path = "map/stubs/" + it.path } }
+    from("../../../resources/routing") { include "routing.xml"; eachFile { it.path = "routing/" + it.path } }
+    from("../../../resources/rendering_styles/fonts") { include "**/*.ttf"; eachFile { it.path = "map/fonts/" + it.path } }
+    from("../../../resources/misc/icu4c") { include "*.dat"; eachFile { it.path = "misc/icu4c/" + it.path.replaceAll(/icudt\d+([lb])\.dat/, 'icu-data-$1.dat') } }
+    into(rawOsmAndAssetsDir)
+    includeEmptyDirs = false
+}
+
+tasks.register('indexOsmAndResources') {
+    description = "Index OsmAnd resources"
+    group = "build"
+    mustRunAfter(copyOsmAndResources)
+
+    def outputIndexFile = file("$generatedOsmAndAssetsDir/OsmAndCore_ResourcesBundle.index")
+    inputs.dir(rawOsmAndAssetsDir)
+    outputs.file(outputIndexFile)
+
+    doLast {
+        def resourcesDir = rawOsmAndAssetsDir
+        def resources = fileTree(resourcesDir) {
+            include "**/*.*"
+        }.collect {
+            it.toURI().normalize().path.substring(resourcesDir.toURI().normalize().path.length())
+        }
+        outputIndexFile.text = resources.join('\n')
+    }
+}
+
+tasks.register('packOsmAndResources', DefaultTask) {
+    description = "Pack OsmAnd resources"
+    group = "build"
+    mustRunAfter(copyOsmAndResources)
+
+    def sourceFiles = project.fileTree(rawOsmAndAssetsDir)
+    def outputDir = "$generatedOsmAndAssetsDir/OsmAndCore_ResourcesBundle"
+    inputs.dir(rawOsmAndAssetsDir)
+    outputs.dir(outputDir)
+
+    doLast {
+        project.delete(outputDir)
+        project.mkdir(outputDir)
+
+        def excludeExts = ['.png', '.qz']
+
+        sourceFiles.each { inFile ->
+            def relativePath = rawOsmAndAssetsDir.toURI().relativize(inFile.toURI()).getPath()
+            def outFile = new File(outputDir, relativePath)
+            outFile.getParentFile().mkdirs()
+
+            def extension = inFile.name.substring(inFile.name.lastIndexOf('.'))
+            if (excludeExts.contains(extension)) {
+                Files.copy(inFile.toPath(), outFile.toPath())
+                println "Copied '$relativePath'"
+            } else {
+                def outFileQz = new File(outFile.path + ".qz")
+                byte[] inputBytes = inFile.bytes
+                int originalSize = inputBytes.length
+
+                Deflater compressor = new Deflater(Deflater.BEST_COMPRESSION)
+                compressor.setInput(inputBytes)
+                compressor.finish()
+
+                ByteArrayOutputStream bos = new ByteArrayOutputStream(originalSize)
+                byte[] buffer = new byte[1024]
+                while (!compressor.finished()) {
+                    int count = compressor.deflate(buffer)
+                    bos.write(buffer, 0, count)
+                }
+                compressor.end()
+                byte[] compressedBytes = bos.toByteArray()
+
+                FileOutputStream fos = new FileOutputStream(outFileQz)
+                fos.write(ByteBuffer.allocate(4).putInt(originalSize).array())
+                fos.write(compressedBytes)
+                fos.close()
+
+                println "Packed '$relativePath' from $originalSize to ${compressedBytes.length + 4}"
+            }
+        }
+    }
+}
+
+android.libraryVariants.all { variant ->
+    tasks.named("package${variant.name.capitalize()}Assets").configure {
+        dependsOn copyOsmAndResources, indexOsmAndResources, packOsmAndResources
+    }
+    tasks.named("merge${variant.name.capitalize()}JniLibFolders").configure {
+        dependsOn copyNdkSharedLibs, copyQtSharedLibs
+    }
+    tasks.named("extract${variant.name.capitalize()}Annotations").configure {
+        dependsOn swigGenerateJava, copyQtJarLibs
+    }
+    tasks.named("merge${variant.name.capitalize()}JavaResource").configure {
+        dependsOn copyQtJarLibs
+    }
+    tasks.named("copy${variant.name.capitalize()}JniLibsProjectAndLocalJars").configure {
+        dependsOn copyQtJarLibs
+    }
+}
+
+afterEvaluate {
+    android.libraryVariants.configureEach { variant ->
+        variant.javaCompileProvider.configure {
+            dependsOn swigGenerateJava, indexOsmAndResources, packOsmAndResources, copyNdkSharedLibs, copyQtSharedLibs, copyQtJarLibs
+        }
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: "libs", include: ["**/*.jar"])
+    implementation project(":OsmAndCore_androidNative")
+}
+
+afterEvaluate {
+    group = "net.osmand"
+    version = System.getenv("OSMAND_BINARIES_IVY_REVISION") ?: "master-snapshot"
+
+    publishing {
+        // This is the single source of truth for the repository
+        repositories {
+            ivy {
+                url = System.getenv("OSMAND_BINARIES_IVY_ROOT") ?: "./"
+                patternLayout {
+                    artifact "[organisation]/[module]/[revision]/[artifact]-[revision].[ext]"
+                    ivy "[organisation]/[module]/[revision]/ivy-[revision].xml"
+                }
+            }
+        }
+        // This defines the publication for the main, root AAR
+        publications {
+            releaseAar(IvyPublication) {
+                artifact tasks.named('bundleReleaseAar')
+            }
+            releaseJar(IvyPublication) {
+                artifact tasks.named("bundleLibRuntimeToJarRelease")
+            }
+        }
+    }
+}

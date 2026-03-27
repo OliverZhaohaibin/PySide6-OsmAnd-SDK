@@ -1,0 +1,243 @@
+#ifndef _OSMAND_CORE_ATLAS_MAP_RENDERER_OPENGL_H_
+#define _OSMAND_CORE_ATLAS_MAP_RENDERER_OPENGL_H_
+
+#include "stdlib_common.h"
+
+#include <glm/glm.hpp>
+
+#include "QtExtensions.h"
+#include <QReadWriteLock>
+
+#include "OsmAndCore.h"
+#include "CommonTypes.h"
+#include "AtlasMapRenderer.h"
+#include "AtlasMapRendererInternalState_OpenGL.h"
+#include "AtlasMapRendererSkyStage_OpenGL.h"
+#include "AtlasMapRendererMapLayersStage_OpenGL.h"
+#include "AtlasMapRendererMap3DObjectsStage_OpenGL.h"
+#include "AtlasMapRendererStageHelper_OpenGL.h"
+#include "AtlasMapRendererSymbolsStage_OpenGL.h"
+#include "AtlasMapRendererDebugStage_OpenGL.h"
+#include "OpenGL/GPUAPI_OpenGL.h"
+
+namespace OsmAnd
+{
+    enum TileVisibility : int32_t
+    {
+        NotTestedYet = 0,
+        Invisible,
+        AlmostVisible,
+        VisibleFlat,
+        Visible,
+        ExtraDetail
+    };
+
+    class AtlasMapRenderer_OpenGL : public AtlasMapRenderer
+    {
+        Q_DISABLE_COPY_AND_MOVE(AtlasMapRenderer_OpenGL);
+    public:
+        // Short type aliases:
+        typedef AtlasMapRendererInternalState_OpenGL InternalState;
+    private:
+    protected:
+        const static float _zNear;
+        const static double _radius;
+        const static double _maximumHeightFromSeaLevelInMeters;
+        const static double _maximumDepthFromSeaLevelInMeters;
+        const static double _detailDistanceFactor;
+        const static float _invalidElevationValue;
+        const static float _minimumVisualZoom;
+        const static float _maximumVisualZoom;
+        const static double _minimumElevationAngle;
+        const static ZoomLevel _zoomForFlattening;
+
+        void computeVisibleArea(InternalState* internalState, const MapRendererState& state,
+            const float lowerDetail, const double tiltFactor, const CalculationSteps neededSteps) const;
+        double getDistanceToTile(
+            const glm::dvec3& tileCenter, const glm::dvec3& camPos, const glm::dvec3& camDir, double tiltFactor) const;
+        double detailDistanceFactor(const int zoomShift) const;
+        void insertTileId(QHash<TileId, TileVisibility>& nextTiles,
+            const TileId& tileId, const double zDetail, const double tiltFactor, const int32_t zoomShift,
+            const glm::dvec3& camPos, const glm::dvec3& camDir, const bool almostVisible) const;
+        bool isPointVisible(const glm::dvec3& point,
+            const glm::dvec3& topN, const glm::dvec3& leftN, const glm::dvec3& bottomN, const glm::dvec3& rightN,
+            const double topD, const double leftD, const double bottomD, const double rightD,
+            bool skipTop, bool skipLeft, bool skipBottom, bool skipRight,
+            const glm::dvec3* botRightN = nullptr, const double* botRightD = nullptr) const;
+        bool rayIntersectsTileSurface(const glm::dvec3& rayStart, const glm::dvec3& rayVector,
+            const double left, const double right, const double top, const double bottom,
+            const double radius) const;
+        bool rayIntersectsTileSide(const glm::dvec3& rayStart, const glm::dvec3& rayVector,
+            const glm::dvec3& planeO, const glm::dvec3& planeN,
+            const double top, const double bottom, const double minRadius, const double maxRadius) const;
+        bool rayIntersectsTileCut(const glm::dvec3& rayStart, const glm::dvec3& rayVector, const double nSqrTanLat,
+            const double left, const double right, const double minRadius, const double maxRadius) const;
+        bool isEdgeVisible(const glm::dvec3& cameraPosition,
+            const glm::dvec3& topN, const glm::dvec3& leftN, const glm::dvec3& bottomN, const glm::dvec3& rightN,
+            const double topD, const double leftD, const double bottomD, const double rightD,
+            const glm::dvec3& startPoint, const glm::dvec3& endPoint,
+            const glm::dvec3* botRightN = nullptr, const double* botRightD = nullptr) const;
+        bool isArcVisible(const glm::dvec3& cp,
+            const glm::dvec3& topN, const glm::dvec3& leftN, const glm::dvec3& bottomN, const glm::dvec3& rightN,
+            const double topD, const double leftD, const double bottomD, const double rightD,
+            const double startAngle, const double endAngle, const double arcZ, const double sqrRadius,
+            const glm::dvec3* botRightN = nullptr, const double* botRightD = nullptr) const;
+        bool isPointVisible(const InternalState& internalState, const glm::vec3& point, bool skipTop,
+            bool skipLeft, bool skipBottom, bool skipRight, bool skipFront, bool skipBack, float tolerance = 0.0f) const;
+        bool isEdgeVisible(const MapRendererInternalState& internalState,
+            const glm::vec3& startPoint, const glm::vec3& endPoint) const override;
+        double getZoomOffset(const ZoomLevel zoomLevel, const double visualZoom, const double distanceFactor) const;
+        void getElevationDataLimits(const MapRendererState& state,
+            std::shared_ptr<const IMapElevationDataProvider::Data>& elevationData,
+            const TileId& tileId, const ZoomLevel zoomLevel, float& minHeight, float& maxHeight) const;
+        void getElevationDataLimits(const MapRendererState& state,
+            std::shared_ptr<const IMapElevationDataProvider::Data>& elevationData,
+            const double metersPerUnit, float& minHeight, float& maxHeight) const;
+        bool getHeightLimits(const MapRendererState& state, const TileId& tileId, const double metersPerUnit,
+            const ZoomLevel zoomLevel, float& minHeight, float& maxHeight) const;
+        bool getPositionFromScreenPoint(const InternalState& internalState, const MapRendererState& state,
+            const PointD& screenPoint, PointI64& location, const float height = 0.0f) const;
+        bool getPositionFromScreenPoint(const InternalState& internalState, const MapRendererState& state,
+            const PointD& screenPoint, glm::dvec3& coords, const float height = 0.0f) const;
+        bool getNearestLocationFromScreenPoint(const InternalState& internalState, const MapRendererState& state,
+            const PointI& location31, const PointI& screenPoint,
+            PointI64& fixedLocation, PointI64& currentLocation) const;
+        std::shared_ptr<const GPUAPI::ResourceInGPU> captureElevationDataResource(const MapRendererState& state,
+            TileId normalizedTileId, ZoomLevel zoomLevel,
+            std::shared_ptr<const IMapElevationDataProvider::Data>* pOutSource = nullptr,
+            bool* isNotReady = nullptr) const;
+        OsmAnd::ZoomLevel getElevationData(const MapRendererState& state,
+            TileId normalizedTileId, ZoomLevel zoomLevel, PointF& offsetInTileN, bool noUnderscaled,
+            std::shared_ptr<const IMapElevationDataProvider::Data>* pOutSource = nullptr) const;
+
+        // State-related:
+        InternalState _internalState;
+        mutable QReadWriteLock _requiredInternalStateLock;
+        mutable InternalState _requiredInternalState;
+        const MapRendererInternalState* getInternalStateRef() const override;
+        MapRendererInternalState* getInternalStateRef() override;
+        const MapRendererInternalState& getInternalState() const override;
+        MapRendererInternalState& getInternalState() override;
+        InternalState getRequiredInternalState(
+            bool& result, MapRendererState* ptrState = nullptr) const;
+        bool updateInternalState(
+            MapRendererInternalState& outInternalState, const MapRendererState& state,
+            const MapRendererConfiguration& configuration,
+            const CalculationSteps neededSteps = Complete) const override;
+
+        // Resources:
+        void onValidateResourcesOfType(MapRendererResourceType type) override;
+
+        // Customization points:
+        bool doInitializeRendering(bool reinitialize) override;
+        bool doRenderFrame(IMapRenderer_Metrics::Metric_renderFrame* metric) override;
+        bool doReleaseRendering(bool gpuContextLost) override;
+        bool handleStateChange(const MapRendererState& state, MapRendererStateChanges mask) override;
+        void flushRenderCommands() override;
+
+        GPUAPI_OpenGL* getGPUAPI() const;
+
+        // Stages:
+        AtlasMapRendererSkyStage* createSkyStage() override;
+        AtlasMapRendererMapLayersStage* createMapLayersStage() override;
+        AtlasMapRendererMap3DObjectsStage* createMap3DObjectsStage() override;
+        AtlasMapRendererSymbolsStage* createSymbolsStage() override;
+        AtlasMapRendererDebugStage* createDebugStage() override;
+
+        // Detail level:
+        OsmAnd::ZoomLevel _tileZoomLevel;
+        int _tileZoomLevelOffset;
+
+        AreaI getVisibleBBox31(const MapRendererInternalState& internalState) const override;
+        AreaI getVisibleBBoxShifted(const MapRendererInternalState& internalState) const override;
+        double getPixelsToMetersScaleFactor(
+            const MapRendererState& state, const MapRendererInternalState& internalState) const override;
+        ZoomLevel setTileZoomLevel(
+            const MapRendererState& state, const MapRendererInternalState& internalState) override;
+        bool getNewTargetAndZoom(const MapRendererState& state, const PointI& screenPoint, const PointI& location31,
+            const float height, PointI& target31, ZoomLevel& zoomLevel, float& visualZoom,
+            double* shiftInPixels = nullptr) const override;
+        bool getNewTargetAndZoom(const MapRendererState& state, const PointI& location31, const float height,
+            PointI& target31, ZoomLevel& zoomLevel, float& visualZoom,
+            PointI& screenPoint) const override;
+        bool getExtraZoomAndTiltForRelief(const MapRendererState& state, PointF& zoomAndTilt) const override;
+        bool getExtraZoomAndRotationForAiming(const MapRendererState& state,
+            const PointI& firstLocation31, const float firstHeightInMeters, const PointI& firstPoint,
+            const PointI& secondLocation31, const float secondHeightInMeters, const PointI& secondPoint,
+            PointD& zoomAndRotate) const override;
+        bool getTiltAndRotationForAiming(const MapRendererState& state,
+            const PointI& firstLocation31, const float firstHeight, const PointI& firstPoint,
+            const PointI& secondLocation31, const float secondHeight, const PointI& secondPoint,
+            PointD& tiltAndRotate) const override;
+        bool isLocationHeightAvailable(const MapRendererState& state, const PointI& location31) const override;
+        float getLocationHeightInMeters(const MapRendererState& state, const PointI& location31) const override;
+        float getHeightOfLocation(const MapRendererState& state, const PointI& location31) const override;
+        bool getProjectedLocation(const MapRendererInternalState& internalState, const MapRendererState& state,
+            const PointI& location31, const float height, PointI& outLocation31) const override;
+        bool getLastProjectablePoint(const MapRendererInternalState& internalState,
+            const glm::vec3& startPoint, const glm::vec3& endPoint, glm::vec3& visiblePoint) const override;
+        bool isPointProjectable(const MapRendererInternalState& internalState, const glm::vec3& point) const override;
+        bool isPointVisible(const MapRendererInternalState& internalState, const glm::vec3& point, bool skipTop = false,
+            bool skipLeft = false, bool skipBottom = false, bool skipRight = false, bool skipFront = false, bool skipBack = false, float tolerance = 0.0) const override;
+        float getWorldElevationOfLocation(const MapRendererState& state,
+            const float elevationInMeters, const PointI& location31) const override;
+        float getElevationOfLocationInMeters(const MapRendererState& state,
+            const float elevation, const ZoomLevel zoom, const PointI& location31) const override;
+        double getDistanceFactor(const MapRendererState& state, const float tileSize,
+            double& baseUnits, float& sinAngleToPlane) const override;
+        OsmAnd::ZoomLevel getSurfaceZoom(const MapRendererState& state, float& surfaceVisualZoom) const override;
+        OsmAnd::ZoomLevel getFlatZoom(const MapRendererState& state, const ZoomLevel surfaceZoomLevel,
+            const float surfaceVisualZoom, const double pointElevation, float& flatVisualZoom) const override;
+
+    public:
+        AtlasMapRenderer_OpenGL(GPUAPI_OpenGL* gpuAPI);
+        virtual ~AtlasMapRenderer_OpenGL();
+
+        float getTileSizeOnScreenInPixels() const override;
+
+        bool getLocationFromScreenPoint(const PointI& screenPoint, PointI& location31) const override;
+        bool getLocationFromScreenPoint(const PointD& screenPoint, PointI& location31) const override;
+        bool getLocationFromScreenPoint(const PointD& screenPoint, PointI64& location) const override;
+        bool getLocationFromElevatedPoint(const PointI& screenPoint, PointI& location31,
+            float* heightInMeters = nullptr) const override;
+        float getHeightAndLocationFromElevatedPoint(const PointI& screenPoint, PointI& location31) const override;
+        bool getZoomAndRotationAfterPinch(
+            const PointI& firstLocation31, const float firstHeightInMeters, const PointI& firstPoint,
+            const PointI& secondLocation31, const float secondHeightInMeters, const PointI& secondPoint,
+            PointD& zoomAndRotate) const override;
+        bool getTiltAndRotationAfterMove(
+            const PointI& firstLocation31, const float firstHeightInMeters, const PointI& firstPoint,
+            const PointI& secondLocation31, const float secondHeightInMeters, const PointI& secondPoint,
+            PointD& tiltAndRotate) const override;
+
+        float getLocationHeightInMeters(const PointI& location31) const override;
+        float getHeightOfLocation(const PointI& location31) const override;
+        float getMapTargetDistance(const PointI& location31, bool checkOffScreen = false) const override;
+
+        ZoomLevel getMinZoomLimit(
+            const MapRendererState& state, const PointI& target31, float& minVisualZoom) const override;
+        float clampVisualZoom(const float visualZoom) const override;
+        void getCorrectedZoomOverGlobe(const MapRendererState& state, const PointI& target31,
+            ZoomLevel& zoomLevel, float& visualZoom) const override;
+
+        AreaI getVisibleBBox31() const override;
+        AreaI getVisibleBBoxShifted() const override;
+        bool isPositionVisible(const PointI64& position) const override;
+        bool isPositionVisible(const PointI& position31) const override;
+        bool isPathVisible(const QVector<PointI>& path31) const override;
+        bool isAreaVisible(const AreaI& area31) const override;
+        bool isTileVisible(const int tileX, const int tileY, const int zoom) const override;
+        bool obtainScreenPointFromPosition(const PointI& position31, PointI& outScreenPoint, bool checkOffScreen = false) const override;
+        bool obtainElevatedPointFromPosition(const PointI& position31, PointI& outScreenPoint, bool checkOffScreen = false) const override;
+
+        float getCameraHeightInMeters() const override;
+        int getTileZoomOffset() const override;
+        
+        double getTileSizeInMeters() const override;
+        double getPixelsToMetersScaleFactor() const override;
+
+        double getMaxViewportScale() const override;
+    };
+}
+
+#endif // !defined(_OSMAND_CORE_ATLAS_MAP_RENDERER_OPENGL_H_)

@@ -1,0 +1,19 @@
+<svg width="48" height="48" fill="white" version="1.1" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+ <namedview bordercolor="#666666" borderopacity="1" gridtolerance="10" guidetolerance="10" objecttolerance="10" pagecolor="#ffffff" showgrid="false"/>
+ <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="2">
+  <path d="M20.99 23.01L15 29v13.99"/>
+  <path d="m20.99 22.99-5.99-6v-9.97"/>
+  <path d="m20.99 23h-6l-7.98 7.99"/>
+ </g>
+ <g fill="none" shape-rendering="auto" stroke="#ffffff" stroke-linecap="round" stroke-width="2">
+  <ellipse cx="24" cy="23" rx="3" ry="4" color-rendering="auto" image-rendering="auto" style="isolation:auto;mix-blend-mode:normal;paint-order:normal"/>
+  <ellipse cx="24" cy="34" rx="5" ry="7" color-rendering="auto" image-rendering="auto" style="isolation:auto;mix-blend-mode:normal;paint-order:normal"/>
+  <ellipse cx="24" cy="15" rx="5" ry="4" color-rendering="auto" image-rendering="auto" style="isolation:auto;mix-blend-mode:normal;paint-order:normal"/>
+ </g>
+ <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-width="2">
+  <path d="M27.01 23.01L33 29v13.99"/>
+  <path d="M27.01 22.99l5.99-6V7.02"/>
+  <path d="m27.01 23h6l7.98 7.99"/>
+  <path d="m27 7-3 3-3-3" style="paint-order:normal"/>
+ </g>
+</svg>

@@ -1,0 +1,142 @@
+#ifndef _SWIG_UTILITIES_H_
+#define _SWIG_UTILITIES_H_
+
+#include <OsmAndCore/stdlib_common.h>
+#include <OsmAndCore/Map/MapMarker.h>
+#include <OsmAndCore/IQueryController.h>
+
+#include <OsmAndCore/QtExtensions.h>
+#include <OsmAndCore/SingleSkImage.h>
+#include <QString>
+#include <QByteArray>
+#include <QFile>
+
+#include <SkBitmap.h>
+#include <SkImage.h>
+
+namespace OsmAnd
+{
+    struct SwigUtilities
+    {
+        inline static bool isAborted(const IQueryController* queryController)
+        {
+            return queryController && queryController->isAborted();
+        }
+
+        inline static bool isAborted(const std::shared_ptr<const IQueryController>& queryController)
+        {
+            return queryController && queryController->isAborted();
+        }
+
+        inline static QByteArray readEntireFile(const QString& filename)
+        {
+            QFile file(filename);
+            if (!file.open(QIODevice::ReadOnly))
+                return QByteArray();
+
+            const auto data = file.readAll();
+
+            file.close();
+
+            return data;
+        }
+
+        inline static QByteArray readPartOfFile(const QString& filename, const size_t offset, const size_t length)
+        {
+            QFile file(filename);
+            if (!file.open(QIODevice::ReadOnly))
+                return QByteArray();
+
+            if (!file.seek(offset))
+                return QByteArray();
+
+            QByteArray data;
+            data.resize(length);
+
+            auto pData = data.data();
+            size_t totalBytesRead = 0;
+            while (totalBytesRead < length)
+            {
+                const auto bytesRead = file.read(pData, length - totalBytesRead);
+                if (bytesRead < 0)
+                    break;
+                pData += bytesRead;
+                totalBytesRead += static_cast<size_t>(bytesRead);
+            }
+            file.close();
+
+            if (totalBytesRead != length)
+                return QByteArray();
+            return data;
+        }
+
+#ifdef SWIG
+        %apply (char *BYTE, size_t LENGTH) { (const char* const pBuffer, const size_t bufferSize) }
+#endif // SWIG
+        inline static QByteArray createQByteArrayAsCopyOf(const char* const pBuffer, const size_t bufferSize)
+        {
+            return QByteArray(reinterpret_cast<const char*>(pBuffer), bufferSize);
+        }
+
+        inline static QByteArray emptyQByteArray()
+        {
+            return QByteArray();
+        }
+
+#ifdef SWIG
+        %apply (char *BYTE, size_t LENGTH) { (const char* const pBuffer, const size_t bufferSize) }
+#endif // SWIG
+        inline static void appendToQByteArray(QByteArray& array, const char* const pBuffer, const size_t bufferSize)
+        {
+            array.append(reinterpret_cast<const char*>(pBuffer), bufferSize);
+        }
+
+        inline static QByteArray qDecompress(const QByteArray& compressedData)
+        {
+            return qUncompress(compressedData);
+        }
+
+        inline static OsmAnd::MapMarker::OnSurfaceIconKey getOnSurfaceIconKey(const int value)
+        {
+            return reinterpret_cast<OsmAnd::MapMarker::OnSurfaceIconKey>(value);
+        }
+
+#ifdef SWIG
+        %apply (char *BYTE, size_t LENGTH) { (const char* const pBuffer, const size_t bufferSize) }
+#endif // SWIG
+        inline static SingleSkImage createSkImageARGB888With(
+            const unsigned int width,
+            const unsigned int height,
+            const char* const pBuffer,
+            const size_t bufferSize)
+        {
+            SkBitmap bitmap;
+
+            if (!bitmap.tryAllocPixels(SkImageInfo::Make(
+                width,
+                height,
+                SkColorType::kRGBA_8888_SkColorType,
+                SkAlphaType::kPremul_SkAlphaType)))
+            {
+                return SingleSkImage(nullptr);
+            }
+            if (bitmap.computeByteSize() < bufferSize)
+                return SingleSkImage(nullptr);
+            memcpy(bitmap.getPixels(), pBuffer, bufferSize);
+
+            bitmap.setImmutable(); // Don't copy when we create an image.
+            return SingleSkImage(bitmap.asImage());
+        }
+
+        inline static SingleSkImage nullSkImage()
+        {
+            return SingleSkImage(nullptr);
+        }
+
+    private:
+        SwigUtilities();
+        ~SwigUtilities();
+    };
+}
+
+#endif // !defined(_SWIG_UTILITIES_H_)

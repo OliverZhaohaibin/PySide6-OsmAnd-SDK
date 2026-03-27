@@ -1,0 +1,11 @@
+<svg width="48" height="48" fill="none" version="1.1" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+ <namedview bordercolor="#666666" borderopacity="1" gridtolerance="10" guidetolerance="10" objecttolerance="10" pagecolor="#ffffff" showgrid="true">
+  <grid spacingx="2" spacingy="2" type="xygrid"/>
+ </namedview>
+ <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" stroke-width="4">
+  <path d="m24 10v28"/>
+  <path d="m38 38h-28"/>
+  <path d="m24 38-10-10v-10"/>
+  <path d="m24 38 10-10v-10"/>
+ </g>
+</svg>

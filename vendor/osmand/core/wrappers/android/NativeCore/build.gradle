@@ -1,0 +1,53 @@
+apply plugin: 'com.android.library'
+
+import org.apache.tools.ant.taskdefs.condition.Os
+
+android {
+    sourceSets {
+        main {
+            manifest.srcFile "AndroidManifest.xml"
+            java.srcDirs = []
+            jniLibs.srcDirs = []
+            jni.srcDirs = []
+            assets.srcDirs = []
+        }
+    }
+
+    namespace "net.osmand.core.nativeLibs"
+    compileSdk 35
+    buildToolsVersion = "35.0.0"
+
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 35
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+	aaptOptions {
+		// Don't compress any resources
+		noCompress "qz", "png"
+	}
+}
+
+// OsmAndCore JNI build task
+tasks.register('buildOsmAndCore', Exec) {
+    description "Build OsmAndCore"
+
+    if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+        commandLine file("../build.cmd").getAbsolutePath()
+    } else {
+        commandLine "sh", file("../build.sh").getAbsolutePath()
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    compileTask -> compileTask.dependsOn << buildOsmAndCore
+}

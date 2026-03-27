@@ -1,0 +1,22 @@
+# Android Studio
+/.idea
+*.iml
+
+# Gradle
+.gradle
+/local.properties
+
+# MacOSX
+.DS_Store
+
+# Output files
+/build
+
+# Project-specific
+/jniLibs
+/libs
+/assets
+/gen
+/net.osmand
+/NativeCoreRelease/net.osmand
+/NativeCoreDebug/net.osmand

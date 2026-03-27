@@ -1,0 +1,43 @@
+import os ;
+local NDK = [ os.environ ANDROID_NDK_ROOT ] ;
+local NDK_HOST = [ os.environ ANDROID_NDK_HOST ] ;
+local NDK_PLATFORM = [ os.environ ANDROID_NDK_PLATFORM ] ;
+local TOOLCHAIN_VERSION = [ os.environ ANDROID_NDK_TOOLCHAIN_VERSION ] ;
+# --------------------------------------------------------------------
+
+using clang : android
+:
+$(NDK)/toolchains/llvm/prebuilt/$(NDK_HOST)/bin/aarch64-linux-android$(NDK_PLATFORM)-clang++
+:
+<archiver>$(NDK)/toolchains/llvm/prebuilt/$(NDK_HOST)/bin/llvm-ar
+<ranlib>$(NDK)/toolchains/llvm/prebuilt/$(NDK_HOST)/bin/llvm-ranlib
+<compileflags>-fexceptions
+<compileflags>-frtti
+<compileflags>-fvisibility=hidden
+<compileflags>-fvisibility-inlines-hidden
+# Configuration taken from $(NDK)/toolchains/aarch64-linux-android-$(TOOLCHAIN_VERSION)/setup.mk
+<compileflags>-fpic
+<compileflags>-ffunction-sections
+<compileflags>-funwind-tables
+<compileflags>-fstack-protector
+<compileflags>-no-canonical-prefixes
+<compileflags>-std=c++11
+<compileflags>-Wa,--noexecstack
+<compileflags>-DANDROID_STL=c++_static
+<compileflags>-DANDROID
+<compileflags>-stdlib=libc++
+<linkflags>-no-canonical-prefixes
+<linkflags>-stdlib=libc++
+# 'Release/ARM' section
+<compileflags>-O2
+<compileflags>-g
+<compileflags>-DNDEBUG
+<compileflags>-fomit-frame-pointer
+<compileflags>-fstrict-aliasing
+# 'ARMv8a' section
+<compileflags>-march=armv8-a
+# Various
+<cxxflags>-D_REENTRANT
+;
+
+option.set keep-going : false ;

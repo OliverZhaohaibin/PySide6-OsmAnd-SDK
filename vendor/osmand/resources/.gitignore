@@ -1,0 +1,20 @@
+## Project-specific
+
+# Embedded resources generated files
+/resources-bundle.stub
+/resources-bundle.lists-index
+/resources-bundle.chunk-*
+/resources-bundle.cmake
+# /gen
+# /embed-resources.list
+# /embed-resources.index
+# /embed-resources-cpp.index
+# /embed-resources_*.list
+
+# Misc
+_rendering-testcases
+
+*.swp
+*.DS_Store
+# Search obfs
+/test-resources/search/*.obf

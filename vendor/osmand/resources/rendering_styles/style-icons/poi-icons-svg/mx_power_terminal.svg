@@ -1,0 +1,15 @@
+<svg width="48" height="48" fill="none" version="1.1" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+ <namedview bordercolor="#666666" borderopacity="1" gridtolerance="10" guidetolerance="10" objecttolerance="10" pagecolor="#ffffff" showgrid="true">
+  <grid spacingx="2" spacingy="2" type="xygrid"/>
+ </namedview>
+ <path d="m24 12-5.7291 12.485h5.791l-4.8607 11.515 11.07-15.152h-6.2561l4.9372-8.8475z" fill="#ffffff" style="font-variant-east_asian:normal"/>
+ <g fill="none" stroke="#ffffff" stroke-width="2">
+  <path d="m35 7v32h-22v-32z"/>
+  <g stroke-linecap="round">
+   <path d="m4.9207 14.962 7.8867 0.0768"/>
+   <path d="m5.0425 21.082 7.8618-4.18e-4"/>
+   <path d="m35 15h8"/>
+   <path d="m35 21 8-2.09e-4"/>
+  </g>
+ </g>
+</svg>

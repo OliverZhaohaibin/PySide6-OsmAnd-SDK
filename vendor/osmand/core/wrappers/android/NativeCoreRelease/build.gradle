@@ -1,0 +1,92 @@
+apply plugin: 'com.android.library'
+apply plugin: 'ivy-publish'
+
+android {
+    sourceSets {
+        main {
+            manifest.srcFile "AndroidManifest.xml"
+            java.srcDirs = []
+            jniLibs.srcDirs = ["./jniLibs/OsmAnd"]
+            jni.srcDirs = []
+            assets.srcDirs = []
+        }
+    }
+
+    namespace "net.osmand.core.nativeLibs.release"
+    compileSdk 35
+    buildToolsVersion = "35.0.0"
+
+    defaultConfig {
+        minSdkVersion 24
+        targetSdkVersion 35
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lintOptions {
+        abortOnError false
+    }
+
+    aaptOptions {
+        // Don't compress any resources
+        noCompress "qz", "png"
+    }
+}
+
+// OsmAnd libraries tasks
+tasks.register('cleanupOsmAndSharedLibs', Delete) {
+    description "Clean-up OsmAnd shared libraries"
+
+    delete "./jniLibs/OsmAnd"
+}
+
+tasks.register('copyOsmAndSharedLibs', Copy) {
+    description "Copy OsmAnd shared libraries"
+
+    dependsOn cleanupOsmAndSharedLibs
+
+    from("../../../../binaries/android") {
+        include "clang-*/Release/libOsmAndCoreWithJNI.so"
+        eachFile { fileCopyDetails ->
+            fileCopyDetails.path = fileCopyDetails.path.replaceAll(/.*clang-(.*)\/Release\/(.*)/, '$1/$2')
+        }
+    }
+
+    into "./jniLibs/OsmAnd"
+    includeEmptyDirs = false
+}
+
+android.libraryVariants.all { variant ->
+    tasks.named("merge${variant.name.capitalize()}JniLibFolders").configure {
+        dependsOn copyOsmAndSharedLibs
+    }
+}
+
+dependencies {
+    implementation project(":OsmAndCore_androidNative")
+}
+
+afterEvaluate {
+    group = "net.osmand"
+    version = System.getenv("OSMAND_BINARIES_IVY_REVISION") ?: "master-snapshot"
+
+    publishing {
+        repositories {
+            ivy {
+                url = System.getenv("OSMAND_BINARIES_IVY_ROOT") ?: "./"
+                patternLayout {
+                    artifact "[organisation]/[module]/[revision]/[artifact]-[revision].[ext]"
+                    ivy "[organisation]/[module]/[revision]/ivy-[revision].xml"
+                }
+            }
+        }
+        publications {
+            releaseAar(IvyPublication) {
+                artifact tasks.named('bundleReleaseAar')
+            }
+        }
+    }
+}
