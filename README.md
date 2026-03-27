@@ -86,6 +86,11 @@ You can also run the entry point directly:
 python src\maps\main.py --backend auto
 ```
 
+## Documentation
+
+- [Python SDK Guide](docs/python-sdk-guide.md)
+- [Build Guide](BUILD.md)
+
 ## Runtime Notes
 
 - the preview defaults to the bundled `src/maps/tiles/World_basemap_2.obf` and the vendored resources under `vendor/osmand/resources`
