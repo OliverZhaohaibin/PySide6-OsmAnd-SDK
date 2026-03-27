@@ -1,40 +1,56 @@
 # PySide6-OsmAnd-SDK
 
-`PySide6-OsmAnd-SDK` is a standalone workspace that pulls the OsmAnd-native map work out of the larger iPhoto repository and packages it as its own GitHub-style project.
+`PySide6-OsmAnd-SDK` is an independent GitHub project for bringing OsmAnd's native map stack into modern Qt6 and PySide6 workflows. It combines vendored OsmAnd core sources, Windows build tooling, native widget integration, and a runnable preview application in one repository, making it easier to build and embed offline map capabilities from a single codebase.
 
 Author: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
 
-This repository contains:
+## Highlights
 
-- vendored upstream OsmAnd source trees copied as real files, not junctions or submodules
-- the native helper / widget build scripts for both the MinGW and MSVC chains
-- a trimmed PySide6 preview app rooted at `src/maps/main.py`
-- the bundled `World_basemap_2.obf` demo data used by the preview entry point
+- ports the OsmAnd Qt5-era native map stack to Qt6
+- makes the native C++ map widget usable from PySide6 applications
+- supports offline rendering based on OsmAnd `.obf` map data
+- includes both native OpenGL preview and Python-driven raster preview paths
+- provides build scripts for both MinGW and MSVC toolchains on Windows
+- bundles demo data and OsmAnd resources for local testing and integration work
 
-## What Is Included
+## Demo Video
 
-- `vendor/osmand/build`: the official OsmAnd build tree used by the “official” helper scripts
-- `vendor/osmand/core`: copied from `OsmAnd-core`
-- `vendor/osmand/core-legacy`: copied from `OsmAnd-core-legacy`
-- `vendor/osmand/resources`: copied from `OsmAnd-resources`
-- `tools/osmand_render_helper_native`: native helper / widget sources plus MinGW and MSVC build scripts
-- `src/maps`: the Python preview layer, simplified to use only OsmAnd OBF rendering paths
+Add your demo video, recording link, or embedded preview here.
 
-## What Was Removed From The Python Layer
+## Why This Project Matters
 
-The extracted Python app intentionally does **not** keep the old MapLibre / vector-tile fallback stack.
+This project is aimed at developers who want the strengths of OsmAnd's map engine while building with modern Qt and Python tools. It reduces the friction of combining C++ map rendering with a PySide6 user interface, and provides a practical foundation for desktop map viewers, GIS tools, travel applications, and other offline-first location products.
 
-Removed from this standalone project:
+By moving the native stack forward to Qt6 and validating PySide6 compatibility, the repository helps make OsmAnd-based development more accessible to teams working on current-generation Qt applications instead of older Qt5-only integrations.
 
-- legacy `tiles/*.pbf` preview fallback
-- legacy `style.json` rendering path
-- traditional vector-tile parser / style resolver wiring
+## Repository Layout
 
-Kept in this standalone project:
+- `vendor/osmand/build`: build tree and supporting files used by the Windows-oriented OsmAnd build flow
+- `vendor/osmand/core`: vendored OsmAnd core sources
+- `vendor/osmand/core-legacy`: vendored legacy core sources still required by the native build
+- `vendor/osmand/resources`: OsmAnd rendering resources, styles, and data files
+- `tools/osmand_render_helper_native`: native helper and widget sources plus MinGW and MSVC build scripts
+- `src/maps`: PySide6 preview application and Python integration layer
+- `src/maps/main.py`: preview entry point
 
-- helper-backed Python raster rendering for `.obf`
+## Key Capabilities
+
 - native `osmand_native_widget.dll` hosting through PySide6
+- helper-backed Python raster rendering for `.obf`
 - OpenGL and non-OpenGL preview widgets
+- bundled `World_basemap_2.obf` demo data for immediate testing
+
+## Map Data And Styles
+
+### `.obf` Files
+
+OsmAnd `.obf` files are offline binary map packages. They store the map data consumed by the native engine, including vector features such as roads, boundaries, landuse, water, place labels, routing-related information, and points of interest. In this repository, the preview uses the bundled `src/maps/tiles/World_basemap_2.obf` file so the project can be run and demonstrated immediately.
+
+### `styles` Files
+
+Rendering styles are XML-based rule files located under `vendor/osmand/resources/rendering_styles`, usually named like `default.render.xml`, `mapnik.render.xml`, or `snowmobile.render.xml`. These files control how the same `.obf` data is visualized, including colors, line rules, polygon fills, icons, labels, and theme-specific display logic. The Python integration layer passes both the selected `.obf` data source and the active style file into the OsmAnd rendering backend, which makes it possible to switch presentation without changing the underlying map data.
+
+Together, `.obf` data files and rendering style files form the core of the offline map pipeline in this project: the `.obf` file provides the geographic content, and the style file defines how that content appears on screen.
 
 ## Quick Start
 
@@ -68,16 +84,15 @@ You can also run the entry point directly:
 python src\maps\main.py --backend auto
 ```
 
-## Repository Notes
+## Runtime Notes
 
-- The vendored OsmAnd trees are intentionally copied into this repository as actual files so the project can be archived or published independently.
-- The helper output folders `tools/osmand_render_helper_native/dist` and `tools/osmand_render_helper_native/dist-msvc` are generated and ignored by Git.
-- The preview app defaults to the bundled `src/maps/tiles/World_basemap_2.obf` and the vendored resources under `vendor/osmand/resources`.
-- Intended GitHub owner: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
+- the preview defaults to the bundled `src/maps/tiles/World_basemap_2.obf` and the vendored resources under `vendor/osmand/resources`
+- helper outputs in `tools/osmand_render_helper_native/dist` and `tools/osmand_render_helper_native/dist-msvc` are generated and ignored by Git
+- when the native widget runtime is available, the preview can use the embedded OsmAnd widget; otherwise the Python rendering path remains available
 
 ## License
 
-Because this repository redistributes copied OsmAnd source trees, the top-level project is documented as `GPL-3.0-or-later`.
+Because this repository redistributes vendored OsmAnd source trees, the top-level project is documented as `GPL-3.0-or-later`.
 
 Top-level license files:
 
