@@ -15,7 +15,7 @@ Author: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
 
 ## Demo Video
 
-[Watch the demo video](https://cap.link/ggp7kax1k12z1de)
+[Demo Video](https://github.com/user-attachments/assets/d2352ee7-398d-4c90-bd96-d747a6b5e0bb)
 
 ## Why This Project Matters
 
