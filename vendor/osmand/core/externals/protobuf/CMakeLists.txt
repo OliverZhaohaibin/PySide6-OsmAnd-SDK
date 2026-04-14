@@ -72,7 +72,7 @@ endif()
 set(protobuf_atomicops_source ${protobuf_atomicops_source})
 if (CMAKE_TARGET_OS STREQUAL "windows" AND CMAKE_COMPILER_FAMILY STREQUAL "msvc")
     set(protobuf_atomicops_source "upstream.patched/src/google/protobuf/stubs/atomicops_internals_x86_msvc.cc")
-elseif (CMAKE_COMPILER_FAMILY STREQUAL "gcc" AND CMAKE_TARGET_CPU_ARCH_FAMILY STREQUAL "x86")
+elseif ((CMAKE_COMPILER_FAMILY STREQUAL "gcc" OR CMAKE_COMPILER_FAMILY STREQUAL "clang") AND CMAKE_TARGET_CPU_ARCH_FAMILY STREQUAL "x86")
     set(protobuf_atomicops_source "upstream.patched/src/google/protobuf/stubs/atomicops_internals_x86_gcc.cc")
 endif()
 add_library(protobuf_static STATIC

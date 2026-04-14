@@ -4,13 +4,14 @@
 #include <OsmAndCore/stdlib_common.h>
 
 #include <OsmAndCore.h>
+#include <QtCore/QHash>
 
 namespace OsmAnd
 {
     enum class WeatherLayer
     {
         Undefined = -1,
-        
+
         Low = 0,
         High = 1,
     };
@@ -18,7 +19,7 @@ namespace OsmAnd
     enum class WeatherType
     {
         Undefined = -1,
-        
+
         Raster = 0,
         Contour = 1,
     };
@@ -26,10 +27,16 @@ namespace OsmAnd
     enum class WeatherSource
     {
         Undefined = -1,
-        
+
         GFS = 0,
         ECMWF = 1,
     };
+
+    // qHash function for WeatherSource enum (required for Qt6 QHash)
+    inline size_t qHash(WeatherSource source, size_t seed = 0) noexcept
+    {
+        return ::qHash(static_cast<int>(source), seed);
+    }
 
     static const int64_t WeatherSourceHoursAlignment[] = {/*GFS*/ 1, /*ECMWF*/ 3};
     static const int64_t HOUR_IN_MILLISECONDS = 60 * 60 * 1000;
