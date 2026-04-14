@@ -29,51 +29,62 @@ _NATIVE_WIDGET_RUNTIME_PROBE: dict[Path, tuple[bool, str | None]] = {}
 
 @dataclass(frozen=True)
 class _BridgeAPI:
-    library: ctypes.WinDLL
+    library: ctypes.CDLL
 
 
 def _ensure_dll_directory(path: Path) -> None:
-    if hasattr(os, "add_dll_directory") and path.exists():
+    if os.name == "nt" and hasattr(os, "add_dll_directory") and path.exists():
         _NATIVE_DLL_DIR_HANDLES.append(os.add_dll_directory(str(path)))
 
 
 def _load_bridge(library_path: Path) -> _BridgeAPI:
+    # On Windows, register all directories that contain transitive DLL
+    # dependencies BEFORE loading. add_dll_directory() only works if called
+    # prior to the first LoadLibrary for that DLL.
+    if os.name == "nt":
+        pyside_root = Path(PySide6.__file__).resolve().parent
+        shiboken_root = Path(shiboken6.__file__).resolve().parent
+        _ensure_dll_directory(pyside_root)
+        _ensure_dll_directory(shiboken_root)
+
+        # Register colocated runtime mirrors for dependency lookup, but keep the
+        # originally resolved widget DLL path intact. Otherwise a freshly built
+        # official Release binary can be silently replaced by an older dist-msvc
+        # copy that happens to exist in the workspace.
+        dist_dir = library_path.parent
+        package_root = Path(__file__).resolve().parents[3]
+        for candidate_dist in [
+            library_path.parent.parent.parent.parent
+                / "tools" / "osmand_render_helper_native" / "dist-msvc",
+            library_path.parent.parent.parent.parent
+                / "tools" / "osmand_render_helper_native" / "dist",
+            package_root / "tools" / "osmand_render_helper_native" / "dist-msvc",
+            package_root / "tools" / "osmand_render_helper_native" / "dist",
+        ]:
+            if candidate_dist.is_dir():
+                dist_dir = candidate_dist
+                break
+
+        # Register the selected DLL directory first so dependency lookup stays
+        # aligned with the widget binary we are about to load.
+        _ensure_dll_directory(library_path.parent)
+        if dist_dir != library_path.parent:
+            _ensure_dll_directory(dist_dir)
+
+    # On Linux/macOS, set RPATH or LD_LIBRARY_PATH so the linker can find
+    # transitive .so/.dylib dependencies shipped alongside the widget.
     if os.name != "nt":
-        raise TileLoadingError("The native OsmAnd widget is currently only supported on Windows")
+        import sys
+        lib_dir = str(library_path.parent.resolve())
+        ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+        if lib_dir not in ld_path.split(os.pathsep):
+            os.environ["LD_LIBRARY_PATH"] = lib_dir + (os.pathsep + ld_path if ld_path else "")
+        if sys.platform == "darwin":
+            dy_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+            if lib_dir not in dy_path.split(os.pathsep):
+                os.environ["DYLD_LIBRARY_PATH"] = lib_dir + (os.pathsep + dy_path if dy_path else "")
 
-    # Register all directories that contain transitive DLL dependencies BEFORE
-    # calling WinDLL. On Windows, add_dll_directory() only works if called prior
-    # to the first LoadLibrary for that DLL.
-    pyside_root = Path(PySide6.__file__).resolve().parent
-    shiboken_root = Path(shiboken6.__file__).resolve().parent
-    _ensure_dll_directory(pyside_root)
-    _ensure_dll_directory(shiboken_root)
-
-    # Register colocated runtime mirrors for dependency lookup, but keep the
-    # originally resolved widget DLL path intact. Otherwise a freshly built
-    # official Release binary can be silently replaced by an older dist-msvc
-    # copy that happens to exist in the workspace.
-    dist_dir = library_path.parent
-    package_root = Path(__file__).resolve().parents[3]
-    for candidate_dist in [
-        library_path.parent.parent.parent.parent
-            / "tools" / "osmand_render_helper_native" / "dist-msvc",
-        library_path.parent.parent.parent.parent
-            / "tools" / "osmand_render_helper_native" / "dist",
-        package_root / "tools" / "osmand_render_helper_native" / "dist-msvc",
-        package_root / "tools" / "osmand_render_helper_native" / "dist",
-    ]:
-        if candidate_dist.is_dir():
-            dist_dir = candidate_dist
-            break
-
-    # Register the selected DLL directory first so dependency lookup stays
-    # aligned with the widget binary we are about to load.
-    _ensure_dll_directory(library_path.parent)
-    if dist_dir != library_path.parent:
-        _ensure_dll_directory(dist_dir)
-
-    library = ctypes.WinDLL(str(library_path))
+    library = ctypes.CDLL(str(library_path))
     library.osmand_create_map_widget.argtypes = [
         ctypes.c_void_p,
         ctypes.c_wchar_p,
@@ -124,7 +135,7 @@ def probe_native_widget_runtime(package_root: Path | None = None) -> tuple[bool,
 
     library_path = resolve_osmand_native_widget_library(root)
     if library_path is None:
-        result = (False, "The native OsmAnd widget DLL is not available")
+        result = (False, "The native OsmAnd widget library is not available")
     else:
         try:
             _load_bridge(library_path)
@@ -170,7 +181,7 @@ class NativeOsmAndWidget(QWidget):
         self._map_source = map_source.resolved(package_root)
         library_path = resolve_osmand_native_widget_library(package_root)
         if library_path is None:
-            raise TileLoadingError("The native OsmAnd widget DLL is not available")
+            raise TileLoadingError("The native OsmAnd widget library is not available")
         self._library_path = library_path.resolve()
 
         self._bridge = _load_bridge(library_path)

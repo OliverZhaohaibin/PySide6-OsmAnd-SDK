@@ -155,7 +155,7 @@ def choose_launch_configuration(
         if not use_opengl:
             raise TileLoadingError("OpenGL support is unavailable, so the native OsmAnd widget can not be forced")
         if not has_usable_osmand_native_widget(package_root):
-            raise TileLoadingError("The native OsmAnd widget DLL is not available")
+            raise TileLoadingError("The native OsmAnd widget library is not available")
         is_available, reason = probe_native_widget_runtime(package_root)
         if not is_available:
             detail = f": {reason}" if reason else ""
@@ -224,7 +224,7 @@ def format_map_runtime_diagnostics(
     native_library_path = getattr(map_widget, "loaded_library_path", lambda: None)()
     native_library_suffix = ""
     if native_library_path:
-        native_library_suffix = f" native_dll={native_library_path}"
+        native_library_suffix = f" native_library={native_library_path}"
 
     return (
         "[maps.main] "

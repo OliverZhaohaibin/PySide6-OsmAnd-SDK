@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -20,15 +21,29 @@ ENV_OSMAND_OBF_PATH = "IPHOTO_OSMAND_OBF_PATH"
 ENV_OSMAND_RESOURCES_ROOT = "IPHOTO_OSMAND_RESOURCES_ROOT"
 ENV_OSMAND_STYLE_PATH = "IPHOTO_OSMAND_STYLE_PATH"
 
-DEFAULT_HELPER_RELATIVE_PATHS = (
-    Path("tools") / "osmand_render_helper_native" / "dist" / "osmand_render_helper.exe",
-)
-
-DEFAULT_NATIVE_WIDGET_RELATIVE_PATHS = (
-    Path("tools") / "osmand_render_helper_native" / "dist-msvc" / "osmand_native_widget.dll",
-    Path("tools") / "osmand_render_helper_native" / "dist" / "osmand_native_widget.dll",
-    Path("tools") / "osmand_render_helper_native" / "dist" / "libosmand_native_widget.dll",
-)
+if sys.platform == "win32":
+    DEFAULT_HELPER_RELATIVE_PATHS = (
+        Path("tools") / "osmand_render_helper_native" / "dist" / "osmand_render_helper.exe",
+    )
+    DEFAULT_NATIVE_WIDGET_RELATIVE_PATHS = (
+        Path("tools") / "osmand_render_helper_native" / "dist-msvc" / "osmand_native_widget.dll",
+        Path("tools") / "osmand_render_helper_native" / "dist" / "osmand_native_widget.dll",
+        Path("tools") / "osmand_render_helper_native" / "dist" / "libosmand_native_widget.dll",
+    )
+elif sys.platform == "darwin":
+    DEFAULT_HELPER_RELATIVE_PATHS = (
+        Path("tools") / "osmand_render_helper_native" / "dist-macosx" / "osmand_render_helper",
+    )
+    DEFAULT_NATIVE_WIDGET_RELATIVE_PATHS = (
+        Path("tools") / "osmand_render_helper_native" / "dist-macosx" / "osmand_native_widget.dylib",
+    )
+else:
+    DEFAULT_HELPER_RELATIVE_PATHS = (
+        Path("tools") / "osmand_render_helper_native" / "dist-linux" / "osmand_render_helper",
+    )
+    DEFAULT_NATIVE_WIDGET_RELATIVE_PATHS = (
+        Path("tools") / "osmand_render_helper_native" / "dist-linux" / "osmand_native_widget.so",
+    )
 
 
 @dataclass(frozen=True)
@@ -117,7 +132,7 @@ def resolve_osmand_helper_command(package_root: Path | None = None) -> tuple[str
 
 
 def resolve_osmand_native_widget_library(package_root: Path | None = None) -> Path | None:
-    """Return the native Qt widget DLL path when it is available."""
+    """Return the native Qt widget library path when it is available."""
 
     raw_value = os.environ.get(ENV_OSMAND_NATIVE_WIDGET_LIBRARY, "").strip()
     repo_root = _repo_root(package_root or _package_root())
@@ -143,7 +158,7 @@ def has_usable_osmand_default(package_root: Path | None = None) -> bool:
 
 
 def has_usable_osmand_native_widget(package_root: Path | None = None) -> bool:
-    """Return ``True`` when the bundled OBF source and native widget DLL are available."""
+    """Return ``True`` when the bundled OBF source and native widget library are available."""
 
     root = package_root or _package_root()
     source = MapSourceSpec.osmand_default(root).resolved(root)
