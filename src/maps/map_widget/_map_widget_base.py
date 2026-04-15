@@ -15,7 +15,9 @@ from maps.tile_backend import OsmAndRasterBackend
 
 from .input_handler import InputHandler
 from .map_renderer import CityAnnotation, MapRenderer
+from .tile_collector import collect_tiles, request_tiles
 from .tile_manager import TileManager
+from .viewport import compute_view_state
 
 
 class SupportsMapViewport(Protocol):
@@ -157,6 +159,11 @@ class MapWidgetController:
         self._device_scale = 1.0
         self._cities: list[CityAnnotation] = []
         self._tile_manager.set_device_scale(self._device_pixel_ratio())
+
+        # Pre-load initial visible tiles to avoid blank screen on first render.
+        # This is especially important on Linux where the first paint event
+        # may occur before any tiles have been requested.
+        self._request_initial_tiles()
 
     @property
     def zoom(self) -> float:
@@ -387,6 +394,32 @@ class MapWidgetController:
             except Exception:
                 return 1.0
         return 1.0
+
+    def _request_initial_tiles(self) -> None:
+        """Request tiles for the initial viewport before the first paint.
+
+        This ensures tiles start loading immediately on widget creation,
+        preventing a blank screen on Linux where paint events may be delayed.
+        """
+        # Use default widget size if not yet sized
+        width = max(1, self._widget.width())
+        height = max(1, self._widget.height())
+
+        fetch_max_zoom = self._tile_manager.metadata.fetch_max_zoom
+        if fetch_max_zoom is None:
+            fetch_max_zoom = max(0, int(self._tile_manager.metadata.max_zoom))
+
+        view_state = compute_view_state(
+            self._center_x,
+            self._center_y,
+            self._zoom,
+            width,
+            height,
+            self.TILE_SIZE,
+            max_tile_zoom_level=fetch_max_zoom,
+        )
+        _, tiles_to_request = collect_tiles(view_state, self._tile_manager)
+        request_tiles(tiles_to_request, self._tile_manager)
 
     def _lonlat_to_world(self, lon: float, lat: float) -> tuple[float, float] | None:
         try:

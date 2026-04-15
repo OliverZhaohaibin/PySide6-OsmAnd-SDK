@@ -76,6 +76,12 @@ def choose_native_widget_class(
     if not prefer_native_widget:
         return None, "OpenGL support detected. Using the helper-backed Python OBF renderer."
 
+    # On Linux, the native widget may have OpenGL compatibility issues with certain drivers.
+    # Prefer the Python backend which uses the helper process for rendering.
+    import sys
+    if sys.platform == "linux":
+        return None, "OpenGL support detected. Using the helper-backed Python OBF renderer (native widget disabled on Linux for compatibility)."
+
     if not has_usable_osmand_native_widget(package_root):
         return None, "OpenGL support detected. Native widget unavailable, using the Python OBF renderer."
 

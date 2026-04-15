@@ -55,6 +55,9 @@ class MapRenderer:
     ) -> None:
         """Draw the current raster map scene into ``painter``."""
 
+        # Clear the entire viewport with the background color first.
+        # This is critical on Linux to prevent ghosting artifacts where
+        # previous frame content bleeds through.
         painter.fillRect(0, 0, width, height, QColor("#93b4c9"))
 
         fetch_max_zoom = self._tile_manager.metadata.fetch_max_zoom
@@ -73,7 +76,15 @@ class MapRenderer:
         tiles_to_draw, tiles_to_request = collect_tiles(view_state, self._tile_manager)
         request_tiles(tiles_to_request, self._tile_manager)
 
-        for _, tile_data, tile_origin_x, tile_origin_y, _, _ in tiles_to_draw:
+        # Sort tiles by position to ensure consistent drawing order.
+        # This helps prevent visual artifacts where tiles might be drawn
+        # in different orders between frames.
+        tiles_to_draw_sorted = sorted(
+            tiles_to_draw,
+            key=lambda t: (t[3], t[2])  # Sort by (origin_y, origin_x)
+        )
+
+        for _, tile_data, tile_origin_x, tile_origin_y, _, _ in tiles_to_draw_sorted:
             if isinstance(tile_data, RasterTile):
                 self._draw_raster_tile(
                     painter,

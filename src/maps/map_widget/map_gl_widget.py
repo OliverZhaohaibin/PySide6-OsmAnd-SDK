@@ -136,6 +136,24 @@ class MapGLWidget(QOpenGLWidget):
         return self
 
     # ------------------------------------------------------------------
+    def initializeGL(self) -> None:  # type: ignore[override]
+        """Initialize OpenGL state to prevent ghosting on Linux."""
+
+        from PySide6.QtGui import QOpenGLContext
+
+        # Set clear color to match the map background
+        ctx = QOpenGLContext.currentContext()
+        if ctx is not None:
+            try:
+                # Try to get native OpenGL functions for buffer clearing
+                # This helps prevent ghosting on Linux with certain drivers
+                gl = ctx.functions()
+                if gl is not None:
+                    gl.glClearColor(0.576, 0.706, 0.788, 1.0)  # #93b4c9 background color
+            except Exception:
+                pass
+
+    # ------------------------------------------------------------------
     def paintGL(self) -> None:  # type: ignore[override]
         """Render the current frame inside the active OpenGL context."""
 
