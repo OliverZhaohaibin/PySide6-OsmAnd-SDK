@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Sequence
 
-from PySide6.QtCore import QPointF, Signal
-from PySide6.QtGui import QCloseEvent, QPainter, QResizeEvent
+from PySide6.QtCore import QPointF, Signal, Qt
+from PySide6.QtGui import QCloseEvent, QPainter, QResizeEvent, QShowEvent
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 
@@ -27,6 +29,10 @@ class MapGLWidget(QOpenGLWidget):
     panFinished = Signal()
     """Signal emitted once the current pan gesture completes."""
 
+    _GL_COLOR_BUFFER_BIT = 0x00004000
+    _GL_DEPTH_BUFFER_BIT = 0x00000100
+    _GL_SCISSOR_TEST = 0x0C11
+
     def __init__(
         self,
         parent: QWidget | None = None,
@@ -36,6 +42,17 @@ class MapGLWidget(QOpenGLWidget):
         style_path: Path | str = "",
     ) -> None:
         super().__init__(parent)
+
+        # Linux drivers can leave stale regions with partial-damage updates.
+        # Keep an opt-in toggle for A/B testing:
+        #   IPHOTO_OSMAND_GL_PARTIAL_UPDATE=1 -> PartialUpdate
+        #   default on Linux -> NoPartialUpdate
+        if sys.platform == "linux" and os.environ.get("IPHOTO_OSMAND_GL_PARTIAL_UPDATE", "0") != "1":
+            self.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.NoPartialUpdate)
+        else:
+            self.setUpdateBehavior(QOpenGLWidget.UpdateBehavior.PartialUpdate)
+        self.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
+        self.setAutoFillBackground(False)
 
         # ``MapWidgetController`` mirrors the logic used by the QWidget variant,
         # keeping rendering, tile loading, and input handling identical between
@@ -157,6 +174,23 @@ class MapGLWidget(QOpenGLWidget):
     def paintGL(self) -> None:  # type: ignore[override]
         """Render the current frame inside the active OpenGL context."""
 
+        from PySide6.QtGui import QOpenGLContext
+
+        # Clear the OpenGL buffers before each frame so PartialUpdate never
+        # reuses stale pixels from the previous frame.
+        ctx = QOpenGLContext.currentContext()
+        if ctx is not None:
+            gl = ctx.functions()
+            if gl is not None:
+                # Qt may keep a scissor box for PartialUpdate; disable it while
+                # clearing so every frame resets the full FBO.
+                had_scissor = bool(gl.glIsEnabled(self._GL_SCISSOR_TEST))
+                if had_scissor:
+                    gl.glDisable(self._GL_SCISSOR_TEST)
+                gl.glClear(self._GL_COLOR_BUFFER_BIT | self._GL_DEPTH_BUFFER_BIT)
+                if had_scissor:
+                    gl.glEnable(self._GL_SCISSOR_TEST)
+
         painter = QPainter()
         if not painter.begin(self):
             # ``begin`` can theoretically fail when the underlying context is no
@@ -174,7 +208,26 @@ class MapGLWidget(QOpenGLWidget):
         """Propagate resize events and notify listeners about the new viewport."""
 
         super().resizeEvent(event)
+        self._controller.handle_resize()
         self._emit_view_change(*self._controller.view_state())
+
+    # ------------------------------------------------------------------
+    def showEvent(self, event: QShowEvent) -> None:  # type: ignore[override]
+        """Request tiles when the widget becomes visible.
+
+        This ensures tiles are loaded when the widget is first shown,
+        which is critical on Linux where the widget may not have a proper
+        size during construction.
+        """
+        super().showEvent(event)
+        self._controller.handle_resize()
+        self.request_full_update()
+
+    # ------------------------------------------------------------------
+    def request_full_update(self) -> None:
+        """Invalidate the entire widget rect even when PartialUpdate is active."""
+
+        super().update(self.rect())
 
     # ------------------------------------------------------------------
     def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]

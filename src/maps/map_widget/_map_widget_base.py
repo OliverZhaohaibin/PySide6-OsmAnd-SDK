@@ -148,7 +148,13 @@ class MapWidgetController:
         self._update_timer = QTimer(self._widget)
         self._update_timer.setSingleShot(True)
         self._update_timer.setInterval(16)
-        self._update_timer.timeout.connect(self._widget.update)
+        self._update_timer.timeout.connect(self._request_repaint)
+
+        # Timer to debounce tile requests during resize
+        self._resize_timer = QTimer(self._widget)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(100)
+        self._resize_timer.timeout.connect(self._request_initial_tiles)
 
         self._center_x = 0.5
         self._center_y = 0.5
@@ -177,22 +183,30 @@ class MapWidgetController:
         if zoom == self._zoom:
             return
         self._zoom = zoom
-        self._widget.update()
+        self._request_repaint()
         self._notify_view_changed()
 
     def reset_view(self) -> None:
         self._center_x = 0.5
         self._center_y = 0.5
         self.set_zoom(self._default_zoom)
-        self._widget.update()
+        self._request_repaint()
         self._notify_view_changed()
+
+    def handle_resize(self) -> None:
+        """Schedule a tile re-request after widget resize.
+
+        This ensures tiles are requested for the correct viewport size
+        when the widget is first shown or resized.
+        """
+        self._resize_timer.start()
 
     def pan_by_pixels(self, delta_x: float, delta_y: float) -> None:
         world_size = self._world_size()
         self._center_x -= float(delta_x) / world_size
         self._center_y -= float(delta_y) / world_size
         self._wrap_center()
-        self._widget.update()
+        self._request_repaint()
         self._notify_view_changed()
 
     def center_lonlat(self) -> tuple[float, float]:
@@ -223,7 +237,7 @@ class MapWidgetController:
             return
         self._cities = new_cities
         self._renderer.set_cities(self._cities)
-        self._widget.update()
+        self._request_repaint()
 
     def city_at(self, position: QPointF) -> str | None:
         return self._renderer.city_at(position)
@@ -285,7 +299,7 @@ class MapWidgetController:
         self._center_x = (world_x / world_size) % 1.0
         self._center_y = world_y / world_size
         self._wrap_center()
-        self._widget.update()
+        self._request_repaint()
         self._notify_view_changed()
 
     def focus_on(self, lon: float, lat: float, zoom_delta: float = 1.0) -> None:
@@ -299,6 +313,13 @@ class MapWidgetController:
     def _schedule_update(self) -> None:
         if not self._update_timer.isActive():
             self._update_timer.start()
+
+    def _request_repaint(self) -> None:
+        full_update = getattr(self._widget, "request_full_update", None)
+        if callable(full_update):
+            full_update()
+            return
+        self._widget.update()
 
     def _on_pan_requested(self, delta: QPointF) -> None:
         self.pan_by_pixels(delta.x(), delta.y())
@@ -335,7 +356,7 @@ class MapWidgetController:
         self._center_x = new_center_px / new_world_size
         self._center_y = new_center_py / new_world_size
         self._wrap_center()
-        self._widget.update()
+        self._request_repaint()
         self._notify_view_changed()
 
     def _handle_tile_loaded(self, tile_key: tuple[int, int, int]) -> None:
@@ -401,9 +422,10 @@ class MapWidgetController:
         This ensures tiles start loading immediately on widget creation,
         preventing a blank screen on Linux where paint events may be delayed.
         """
-        # Use default widget size if not yet sized
-        width = max(1, self._widget.width())
-        height = max(1, self._widget.height())
+        # Use default widget size if not yet sized - this is critical for
+        # Linux where the widget may not have a proper size during construction.
+        width = max(640, self._widget.width())
+        height = max(480, self._widget.height())
 
         fetch_max_zoom = self._tile_manager.metadata.fetch_max_zoom
         if fetch_max_zoom is None:

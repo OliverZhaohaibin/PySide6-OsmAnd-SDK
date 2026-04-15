@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections import OrderedDict
 from collections import deque
 from typing import Iterable
@@ -27,6 +28,7 @@ class TileManager(QObject):
     tile_missing = Signal(tuple)
     tile_removed = Signal(tuple)
     tiles_changed = Signal()
+    _MISSING_RETRY_COOLDOWN_S = 1.5
 
     def __init__(
         self,
@@ -41,7 +43,7 @@ class TileManager(QObject):
 
         self._tile_cache: OrderedDict[tuple[int, int, int], TilePayload] = OrderedDict()
         self._pending_tiles: set[tuple[int, int, int]] = set()
-        self._missing_tiles: set[tuple[int, int, int]] = set()
+        self._missing_tiles: dict[tuple[int, int, int], float] = {}
         self._metadata = self._tile_backend.probe()
 
         # Request queue for async tile loading in the main thread
@@ -69,8 +71,15 @@ class TileManager(QObject):
     def ensure_tile(self, tile_key: tuple[int, int, int]) -> None:
         """Schedule ``tile_key`` for loading when it is not cached."""
 
-        if tile_key in self._missing_tiles or tile_key in self._pending_tiles:
+        if tile_key in self._pending_tiles:
             return
+
+        failed_at = self._missing_tiles.get(tile_key)
+        if failed_at is not None:
+            if (time.monotonic() - failed_at) < self._MISSING_RETRY_COOLDOWN_S:
+                return
+            # Retry after cooldown; treat this as a fresh request.
+            self._missing_tiles.pop(tile_key, None)
 
         self._pending_tiles.add(tile_key)
         self._request_queue.append(tile_key)
@@ -99,9 +108,10 @@ class TileManager(QObject):
             self._processing_queue = False
             return
 
-        # Process up to 8 tiles per callback to reduce latency
-        # while still allowing the UI to remain responsive
-        batch_size = min(8, len(self._request_queue))
+        # Process up to 16 tiles per callback to reduce latency
+        # while still allowing the UI to remain responsive.
+        # Increased from 8 to 16 for faster initial tile loading on Linux.
+        batch_size = min(16, len(self._request_queue))
         for _ in range(batch_size):
             if not self._request_queue:
                 break
@@ -135,7 +145,13 @@ class TileManager(QObject):
     def is_tile_missing(self, tile_key: tuple[int, int, int]) -> bool:
         """Return ``True`` when ``tile_key`` previously failed to load."""
 
-        return tile_key in self._missing_tiles
+        failed_at = self._missing_tiles.get(tile_key)
+        if failed_at is None:
+            return False
+        if (time.monotonic() - failed_at) < self._MISSING_RETRY_COOLDOWN_S:
+            return True
+        self._missing_tiles.pop(tile_key, None)
+        return False
 
     # ------------------------------------------------------------------
     def pending_tiles(self) -> Iterable[tuple[int, int, int]]:
@@ -175,7 +191,7 @@ class TileManager(QObject):
 
         key = (z, x, y)
         self._pending_tiles.discard(key)
-        self._missing_tiles.discard(key)
+        self._missing_tiles.pop(key, None)
         self._tile_cache[key] = tile
         self._tile_cache.move_to_end(key)
         self.tile_loaded.emit(key)
@@ -192,7 +208,7 @@ class TileManager(QObject):
 
         key = (z, x, y)
         self._pending_tiles.discard(key)
-        self._missing_tiles.add(key)
+        self._missing_tiles[key] = time.monotonic()
         if key in self._tile_cache:
             del self._tile_cache[key]
             self.tile_removed.emit(key)
