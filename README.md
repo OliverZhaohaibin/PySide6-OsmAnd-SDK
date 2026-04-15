@@ -10,7 +10,7 @@ Author: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
 - makes the native C++ map widget usable from PySide6 applications
 - supports offline rendering based on OsmAnd `.obf` map data
 - includes both native OpenGL preview and Python-driven raster preview paths
-- provides build scripts for both MinGW and MSVC toolchains on Windows
+- provides build scripts for Windows (MinGW, MSVC) and Linux (GCC, Clang) toolchains
 - bundles demo data and OsmAnd resources for local testing and integration work
 
 ## Demo Video
@@ -56,6 +56,8 @@ Together, `.obf` data files and rendering style files form the core of the offli
 
 ## Quick Start
 
+### Windows
+
 1. Install Python dependencies:
 
 ```powershell
@@ -86,6 +88,45 @@ You can also run the entry point directly:
 python src\maps\main.py --backend auto
 ```
 
+### Linux
+
+1. Install system dependencies:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential cmake git qt6-base-dev libqt6opengl6-dev
+
+# Fedora/RHEL
+sudo dnf install gcc g++ cmake git qt6-qtbase-devel qt6-qtbase-gui qt6-qtdeclarative-devel
+
+# Arch
+sudo pacman -S base-devel cmake git qt6-base
+```
+
+2. Install Python dependencies:
+
+```bash
+python -m pip install -e .
+```
+
+3. Build the helper:
+
+```bash
+bash tools/osmand_render_helper_native/build_linux.sh
+```
+
+4. Launch the preview:
+
+```bash
+osmand-preview --backend auto
+```
+
+You can also run the entry point directly:
+
+```bash
+python src/maps/main.py --backend auto
+```
+
 ## Documentation
 
 - [Python SDK Guide](docs/python-sdk-guide.md)
@@ -95,8 +136,10 @@ python src\maps\main.py --backend auto
 
 - the preview defaults to the bundled `src/maps/tiles/World_basemap_2.obf` and the vendored resources under `vendor/osmand/resources`
 - the bundled `.obf` is replaceable, so you can test other OsmAnd map extracts downloaded from [download.osmand.net/list.php](https://download.osmand.net/list.php)
-- helper outputs in `tools/osmand_render_helper_native/dist` and `tools/osmand_render_helper_native/dist-msvc` are generated and ignored by Git
+- **Windows**: helper outputs in `tools/osmand_render_helper_native/dist` and `tools/osmand_render_helper_native/dist-msvc` are generated and ignored by Git
+- **Linux**: helper outputs in `tools/osmand_render_helper_native/dist-linux` are generated and ignored by Git
 - when the native widget runtime is available, the preview can use the embedded OsmAnd widget; otherwise the Python rendering path remains available
+- on Linux, the native widget library is built as a `.so` file (shared object); the Python path remains the recommended approach for Linux deployments
 
 ## License
 
