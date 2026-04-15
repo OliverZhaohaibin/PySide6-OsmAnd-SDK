@@ -18,14 +18,41 @@ CMAKE_GENERATOR="${CMAKE_GENERATOR:-Unix Makefiles}"
 
 # Qt detection - prefer PySide6's Qt if available
 detect_qt() {
-    # Try to find Qt from PySide6 installation
-    if [ -n "${VIRTUAL_ENV}" ]; then
-        PYSIDE6_QT="${VIRTUAL_ENV}/lib/python3.12/site-packages/PySide6/Qt"
-        if [ -d "${PYSIDE6_QT}" ]; then
-            QT_ROOT="${PYSIDE6_QT}"
-            echo "Found Qt from PySide6: ${QT_ROOT}"
+    # Honor an explicitly provided QT_ROOT first
+    if [ -n "${QT_ROOT}" ]; then
+        if [ -d "${QT_ROOT}/lib/cmake/Qt6" ] || [ -d "${QT_ROOT}/libexec" ] || [ -d "${QT_ROOT}/bin" ]; then
+            echo "Using Qt from QT_ROOT: ${QT_ROOT}"
             return 0
         fi
+        echo "WARNING: QT_ROOT is set but does not appear to be a valid Qt installation: ${QT_ROOT}"
+    fi
+
+    # Try to find Qt from PySide6 installation via Python
+    for python_cmd in python3 python; do
+        if command -v "${python_cmd}" &> /dev/null; then
+            PYSIDE6_QT="$("${python_cmd}" -c 'import pathlib, sys
+try:
+    import PySide6
+except ImportError:
+    sys.exit(1)
+print(pathlib.Path(PySide6.__file__).resolve().parent / "Qt")' 2>/dev/null || true)"
+            if [ -n "${PYSIDE6_QT}" ] && [ -d "${PYSIDE6_QT}" ]; then
+                QT_ROOT="${PYSIDE6_QT}"
+                echo "Found Qt from PySide6: ${QT_ROOT}"
+                return 0
+            fi
+        fi
+    done
+
+    # Try to find Qt from PySide6 installation inside a virtualenv
+    if [ -n "${VIRTUAL_ENV}" ]; then
+        for PYSIDE6_QT in "${VIRTUAL_ENV}"/lib/python*/site-packages/PySide6/Qt; do
+            if [ -d "${PYSIDE6_QT}" ]; then
+                QT_ROOT="${PYSIDE6_QT}"
+                echo "Found Qt from PySide6 virtualenv: ${QT_ROOT}"
+                return 0
+            fi
+        done
     fi
 
     # Try system Qt

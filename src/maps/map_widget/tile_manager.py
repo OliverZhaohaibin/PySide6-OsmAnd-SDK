@@ -49,11 +49,13 @@ class TileManager(QObject):
         # Request queue for async tile loading in the main thread
         self._request_queue: deque[tuple[int, int, int]] = deque()
         self._processing_queue = False
+        self._is_shutdown = False
 
     # ------------------------------------------------------------------
     def shutdown(self) -> None:
         """Stop background work and release resources."""
 
+        self._is_shutdown = True
         self._tile_backend.shutdown()
         self._request_queue.clear()
         self._processing_queue = False
@@ -70,6 +72,9 @@ class TileManager(QObject):
     # ------------------------------------------------------------------
     def ensure_tile(self, tile_key: tuple[int, int, int]) -> None:
         """Schedule ``tile_key`` for loading when it is not cached."""
+
+        if self._is_shutdown:
+            return
 
         if tile_key in self._pending_tiles:
             return
@@ -102,6 +107,10 @@ class TileManager(QObject):
         Yielding back to the Qt event loop between tiles lets the widget repaint
         incrementally as tiles arrive instead of waiting on a large batch.
         """
+
+        if self._is_shutdown:
+            self._processing_queue = False
+            return
 
         if not self._request_queue:
             self._processing_queue = False

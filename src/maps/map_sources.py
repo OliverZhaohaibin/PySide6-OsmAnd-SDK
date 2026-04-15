@@ -43,6 +43,7 @@ else:
     )
     DEFAULT_NATIVE_WIDGET_RELATIVE_PATHS = (
         Path("tools") / "osmand_render_helper_native" / "dist-linux" / "osmand_native_widget.so",
+        Path("tools") / "osmand_render_helper_native" / "dist-linux" / "libosmand_native_widget.so",
     )
 
 

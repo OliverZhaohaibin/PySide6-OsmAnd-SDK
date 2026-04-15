@@ -1,2 +1,0 @@
-[console_scripts]
-osmand-preview = maps.main:main
