@@ -136,7 +136,6 @@ class MapWidgetController:
         self._tile_manager.tile_loaded.connect(self._handle_tile_loaded)
         self._tile_manager.tile_missing.connect(self._handle_tile_missing)
         self._tile_manager.tile_removed.connect(self._handle_tile_removed)
-        self._tile_manager.tiles_changed.connect(self._schedule_update)
 
         self._input_handler.pan_requested.connect(self._on_pan_requested)
         self._input_handler.pan_requested.connect(self._notify_pan_delta)
@@ -144,11 +143,6 @@ class MapWidgetController:
         self._input_handler.zoom_requested.connect(self._on_zoom_requested)
         self._input_handler.cursor_changed.connect(self._widget.setCursor)
         self._input_handler.cursor_reset.connect(self._widget.unsetCursor)
-
-        self._update_timer = QTimer(self._widget)
-        self._update_timer.setSingleShot(True)
-        self._update_timer.setInterval(16)
-        self._update_timer.timeout.connect(self._request_repaint)
 
         # Timer to debounce tile requests during resize
         self._resize_timer = QTimer(self._widget)
@@ -310,10 +304,6 @@ class MapWidgetController:
     def view_state(self) -> tuple[float, float, float]:
         return self._center_x, self._center_y, self._zoom
 
-    def _schedule_update(self) -> None:
-        if not self._update_timer.isActive():
-            self._update_timer.start()
-
     def _request_repaint(self) -> None:
         full_update = getattr(self._widget, "request_full_update", None)
         if callable(full_update):
@@ -361,12 +351,15 @@ class MapWidgetController:
 
     def _handle_tile_loaded(self, tile_key: tuple[int, int, int]) -> None:
         self._renderer.invalidate_tile(tile_key)
+        self._request_repaint()
 
     def _handle_tile_missing(self, tile_key: tuple[int, int, int]) -> None:
         self._renderer.invalidate_tile(tile_key)
+        self._request_repaint()
 
     def _handle_tile_removed(self, tile_key: tuple[int, int, int]) -> None:
         self._renderer.invalidate_tile(tile_key)
+        self._request_repaint()
 
     def _world_size(self) -> float:
         return float(self.TILE_SIZE * (2 ** self._zoom))

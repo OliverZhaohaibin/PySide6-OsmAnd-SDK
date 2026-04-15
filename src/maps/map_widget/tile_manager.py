@@ -97,43 +97,35 @@ class TileManager(QObject):
 
     # ------------------------------------------------------------------
     def _process_queue(self) -> None:
-        """Process multiple tiles from the request queue in a batch.
+        """Process exactly one queued tile per callback.
 
-        Processing multiple tiles per callback reduces latency and ensures
-        all visible tiles load more uniformly, which is especially important
-        on Linux where timer callbacks can have variable timing.
+        Yielding back to the Qt event loop between tiles lets the widget repaint
+        incrementally as tiles arrive instead of waiting on a large batch.
         """
 
         if not self._request_queue:
             self._processing_queue = False
             return
 
-        # Process up to 16 tiles per callback to reduce latency
-        # while still allowing the UI to remain responsive.
-        # Increased from 8 to 16 for faster initial tile loading on Linux.
-        batch_size = min(16, len(self._request_queue))
-        for _ in range(batch_size):
-            if not self._request_queue:
-                break
-            tile_key = self._request_queue.popleft()
-            z, x, y = tile_key
+        tile_key = self._request_queue.popleft()
+        z, x, y = tile_key
 
-            try:
-                tile = self._tile_backend.load_tile(z, x, y)
-            except TileLoadingError as exc:
-                LOGGER.warning(
-                    "Tile %s/%s/%s could not be loaded: %s",
-                    z,
-                    x,
-                    y,
-                    exc,
-                )
+        try:
+            tile = self._tile_backend.load_tile(z, x, y)
+        except TileLoadingError as exc:
+            LOGGER.warning(
+                "Tile %s/%s/%s could not be loaded: %s",
+                z,
+                x,
+                y,
+                exc,
+            )
+            self._handle_tile_missing(z, x, y)
+        else:
+            if tile is None:
                 self._handle_tile_missing(z, x, y)
             else:
-                if tile is None:
-                    self._handle_tile_missing(z, x, y)
-                else:
-                    self._handle_tile_loaded(z, x, y, tile)
+                self._handle_tile_loaded(z, x, y, tile)
 
         # Schedule processing of remaining tiles if queue is not empty
         if self._request_queue:
