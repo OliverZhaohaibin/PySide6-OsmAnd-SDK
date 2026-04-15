@@ -517,6 +517,12 @@ def _schedule_screenshot_capture(
     delay_ms = max(0, int(capture_delay_ms))
 
     def _capture_and_exit() -> None:
+        # Properly shutdown the map widget before exiting to avoid
+        # "QProcess: Destroyed while process is still running" warnings
+        map_widget = window._map_widget
+        if hasattr(map_widget, "shutdown"):
+            map_widget.shutdown()
+
         if window.capture_screenshot(screenshot_path):
             print(f"[maps.main] screenshot={screenshot_path.resolve()}", flush=True)
             app.exit(0)

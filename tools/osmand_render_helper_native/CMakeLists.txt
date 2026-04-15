@@ -21,7 +21,7 @@ endif()
 
 # Set platform-specific defaults
 if(CMAKE_TARGET_OS STREQUAL "linux")
-    set(QT_ROOT_DEFAULT "/usr")
+    set(QT_ROOT_DEFAULT "$ENV{HOME}/.local/Qt/6.10.1/gcc_64")
     set(MINGW_ROOT_DEFAULT "")
     set(DIST_DIR_DEFAULT "${CMAKE_CURRENT_SOURCE_DIR}/dist-linux")
 elseif(CMAKE_TARGET_OS STREQUAL "windows")
