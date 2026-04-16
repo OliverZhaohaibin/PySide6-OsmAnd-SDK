@@ -385,18 +385,30 @@ vendor/osmand/resources/rendering_styles/default.render.xml
 如果你想拿到真实经纬度，应该在槽函数里调用 `center_lonlat()`：
 
 ```python
+from maps.map_widget import MapGLWidget
+
+
+widget = MapGLWidget()
+
+
 def on_view_changed(_x: float, _y: float, zoom: float) -> None:
-    lon, lat = map_widget.center_lonlat()
+    lon, lat = widget.center_lonlat()
     print(f"center=({lon:.6f}, {lat:.6f}) zoom={zoom:.2f}")
 
 
-map_widget.viewChanged.connect(on_view_changed)
+widget.viewChanged.connect(on_view_changed)
 ```
 
 ### 7.3 读取后端能力
 
 ```python
-metadata = map_widget.map_backend_metadata()
+from maps.map_widget import MapGLWidget
+
+
+widget = MapGLWidget()
+
+
+metadata = widget.map_backend_metadata()
 print(metadata.min_zoom, metadata.max_zoom, metadata.tile_kind, metadata.tile_scheme)
 ```
 
@@ -420,14 +432,18 @@ print(metadata.min_zoom, metadata.max_zoom, metadata.tile_kind, metadata.tile_sc
 
 ```python
 from PySide6.QtWidgets import QLabel
+from maps.map_widget import MapGLWidget
 
 
-pin = QLabel("X", parent=map_widget)
+widget = MapGLWidget()
+
+
+pin = QLabel("X", parent=widget)
 pin.resize(24, 24)
 
 
 def update_pin() -> None:
-    point = map_widget.project_lonlat(121.4737, 31.2304)
+    point = widget.project_lonlat(121.4737, 31.2304)
     if point is None:
         pin.hide()
         return
@@ -436,7 +452,7 @@ def update_pin() -> None:
     pin.show()
 
 
-map_widget.viewChanged.connect(lambda *_: update_pin())
+widget.viewChanged.connect(lambda *_: update_pin())
 update_pin()
 ```
 
@@ -514,16 +530,16 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 
 前提：
 
-- Windows
-- 已构建 native widget DLL
-- DLL 可被成功加载
+- Windows 或 Linux
+- 已构建对应平台的 native widget 库（Windows 为 `.dll`，Linux 为 `.so`）
+- 运行时可以成功加载该库
 
 ## 11. 这个仓库当前的几个重要边界
 
 这些点建议在接项目时一开始就知道：
 
 - 当前公开支持的地图源类型只有 `osmand_obf`
-- native widget 目前只支持 Windows
+- native widget 支持 Windows 和 Linux；Linux 构建会产出 `.so`，并且是生产可用的
 - `MapWidget` / `MapGLWidget` 构造参数里的 `tile_root`、`style_path` 现在只是兼容字段，真正应通过 `MapSourceSpec` 配置
 - `set_city_annotations()` 和 `city_at()` 目前更多是兼容保留接口，不是完整的标注系统
 - SDK 现在没有现成的高层业务 overlay API，标记和面板建议由你自己的 Qt 层处理
@@ -533,7 +549,7 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 另外还有一个需要特别注意的点：
 
 - Python helper 路径可以通过 `MapSourceSpec.helper_command` 显式传入
-- 但 native widget DLL 路径不在 `MapSourceSpec` 中，目前通过默认仓库位置或 `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` 解析
+- 但 native widget 库路径不在 `MapSourceSpec` 中，目前通过默认仓库位置或 `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` 解析（Windows 为 `.dll`，Linux 为 `.so`）
 
 如果你想做独立部署，这一点很重要。
 
@@ -568,10 +584,9 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 
 优先检查：
 
-1. 是否已经执行 `build_native_widget_msvc.ps1`
-2. `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` 是否指向真实 DLL
-3. 是否在 Windows 上运行
-4. Qt / PySide6 / 依赖 DLL 是否都在可搜索路径里
+1. 是否已经为当前平台构建 native widget（Windows：`build_native_widget_msvc.ps1`，Linux：`build_linux.sh`）
+2. `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` 是否指向真实库文件
+3. Qt / PySide6 / 依赖项是否都在当前平台可搜索路径里
 
 ### 12.4 helper 能启动，但渲染失败或闪退
 

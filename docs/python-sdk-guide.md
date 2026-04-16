@@ -40,13 +40,13 @@ Characteristics:
 
 - closest to the native OsmAnd widget path
 - requires OpenGL
-- currently Windows-only
+- available on Windows and Linux
 - depends on `osmand_native_widget.dll`
 - the DLL path is not part of `MapSourceSpec`; it is resolved from default repo paths or environment variables
 
 Use it when:
 
-- you are explicitly targeting Windows
+- you want native OsmAnd-like behavior on Windows or Linux
 - you have already built the native widget DLL
 - you want behavior that stays close to the native OsmAnd widget integration
 
@@ -469,18 +469,30 @@ One important detail: `viewChanged` emits normalized Mercator-space center coord
 If you need geographic coordinates, call `center_lonlat()` inside your slot:
 
 ```python
+from maps.map_widget import MapGLWidget
+
+
+widget = MapGLWidget()
+
+
 def on_view_changed(_x: float, _y: float, zoom: float) -> None:
-    lon, lat = map_widget.center_lonlat()
+    lon, lat = widget.center_lonlat()
     print(f"center=({lon:.6f}, {lat:.6f}) zoom={zoom:.2f}")
 
 
-map_widget.viewChanged.connect(on_view_changed)
+widget.viewChanged.connect(on_view_changed)
 ```
 
 ### 7.3 Read Backend Capabilities
 
 ```python
-metadata = map_widget.map_backend_metadata()
+from maps.map_widget import MapGLWidget
+
+
+widget = MapGLWidget()
+
+
+metadata = widget.map_backend_metadata()
 print(metadata.min_zoom, metadata.max_zoom, metadata.tile_kind, metadata.tile_scheme)
 ```
 
@@ -504,14 +516,18 @@ For example, a simple `QLabel` used as a pin:
 
 ```python
 from PySide6.QtWidgets import QLabel
+from maps.map_widget import MapGLWidget
 
 
-pin = QLabel("X", parent=map_widget)
+widget = MapGLWidget()
+
+
+pin = QLabel("X", parent=widget)
 pin.resize(24, 24)
 
 
 def update_pin() -> None:
-    point = map_widget.project_lonlat(121.4737, 31.2304)
+    point = widget.project_lonlat(121.4737, 31.2304)
     if point is None:
         pin.hide()
         return
@@ -520,7 +536,7 @@ def update_pin() -> None:
     pin.show()
 
 
-map_widget.viewChanged.connect(lambda *_: update_pin())
+widget.viewChanged.connect(lambda *_: update_pin())
 update_pin()
 ```
 
@@ -619,7 +635,7 @@ Why:
 - only the frontend surface falls back to a plain `QWidget`
 - works on any platform where PySide6 and the helper can run
 
-### 10.3 You Need Behavior Closer to Native OsmAnd (Windows Only)
+### 10.3 You Need Behavior Closer to Native OsmAnd
 
 Use:
 
@@ -627,16 +643,16 @@ Use:
 
 Requirements:
 
-- Windows
-- a built native widget DLL
-- a runtime that can load that DLL successfully
+- Windows or Linux
+- a built native widget library for your platform (`.dll` on Windows, `.so` on Linux)
+- a runtime that can load that library successfully
 
 ## 11. Important Current Boundaries
 
 These are worth knowing before you build a larger app around the SDK:
 
 - the only publicly supported source kind right now is `osmand_obf`
-- the native widget is currently Windows-only (DLL-based); Linux builds produce a `.so` but it's still experimental
+- the native widget is supported on Windows and Linux; Linux builds produce a `.so` and are production-ready
 - `tile_root` and `style_path` in the `MapWidget` and `MapGLWidget` constructors are compatibility fields; real configuration should go through `MapSourceSpec`
 - `set_city_annotations()` and `city_at()` are currently compatibility-oriented methods, not a complete annotation system
 - there is no built-in high-level overlay API yet, so markers and business panels are best handled in your own Qt layer
@@ -647,7 +663,7 @@ One extra detail matters a lot for standalone deployment:
 
 - the Python helper path can be passed directly via `MapSourceSpec.helper_command`
 - the native widget library path is not part of `MapSourceSpec`; it is currently resolved through default repo locations or `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY`
-- **Linux users**: the recommended path is `MapGLWidget` with the helper; native widget support is experimental
+- **Linux users**: you can use either `MapGLWidget` with the helper or `NativeOsmAndWidget`; the helper-backed path remains the simplest default
 
 ## 12. Troubleshooting
 
@@ -681,16 +697,15 @@ Absolute paths are the safest option. On Linux, use forward slashes or `Path` ob
 
 ### 12.3 Native Widget DLL Missing or Failing to Load
 
-This applies mainly to Windows; native widget support on Linux is experimental.
+This applies to both Windows and Linux; native widget support on Linux is production-ready.
 
 Check:
 
-1. that you built the native widget (Windows: `build_native_widget_msvc.ps1`)
-2. that `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` points to the correct DLL if you are overriding it
-3. that you are on Windows (native widget is Windows-only)
-4. that Qt, PySide6, and transitive DLL dependencies are all discoverable
+1. that you built the native widget for your platform (Windows: `build_native_widget_msvc.ps1`, Linux: `build_linux.sh`)
+2. that `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` points to the correct library if you are overriding it
+3. that Qt, PySide6, and transitive dependencies are all discoverable for the platform you are using
 
-**Recommended for Linux**: Use `MapGLWidget` with the helper instead of attempting native widget integration.
+**Recommended for Linux**: use `NativeOsmAndWidget` when you want native behavior, or `MapGLWidget` with the helper for the simplest setup.
 
 ### 12.4 The Helper Starts but Rendering Fails
 
