@@ -160,8 +160,8 @@ class TileManager(QObject):
         """Dispatch one queued tile to the worker thread.
 
         Only one tile is in-flight at a time; the next tile is dispatched
-        when the worker reports a result via :pymethod:`_on_worker_tile_ready`
-        or :pymethod:`_on_worker_tile_error`.
+        when the worker reports a result via :meth:`_on_worker_tile_ready`
+        or :meth:`_on_worker_tile_error`.
         """
 
         if self._is_shutdown:
