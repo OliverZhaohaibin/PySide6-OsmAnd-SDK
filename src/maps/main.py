@@ -13,13 +13,24 @@ if __package__ in {None, ""}:  # pragma: no cover - direct script bootstrap
 import argparse
 import os
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction, QKeySequence, QOffscreenSurface, QOpenGLContext
-from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
+from PySide6.QtCore import QEvent, QObject, QLocale, QTimer, Qt, Signal
+from PySide6.QtGui import QAction, QCloseEvent, QKeySequence, QOffscreenSurface, QOpenGLContext
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMainWindow,
+    QMessageBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from maps.errors import TileLoadingError
 from maps.map_sources import (
@@ -31,6 +42,7 @@ from maps.map_sources import (
 from maps.map_widget import MapGLWidget, MapWidget, NativeOsmAndWidget
 from maps.map_widget._map_widget_base import MapWidgetBase
 from maps.map_widget.native_osmand_widget import probe_native_widget_runtime
+from maps.osmand_search import OsmAndSearchService, SearchSuggestion
 
 
 @dataclass(frozen=True)
@@ -41,6 +53,79 @@ class PreviewLaunchConfig:
     widget_class: type[MapWidgetBase]
     native_widget_class: type[MapWidgetBase] | None
     startup_message: str
+
+
+class SearchWorker(QObject):
+    """Run blocking offline searches off the UI thread and keep only the latest request."""
+
+    resultsReady = Signal(int, object)
+    errorReady = Signal(int, str)
+
+    def __init__(self, service: OsmAndSearchService) -> None:
+        super().__init__()
+        self._service = service
+        self._lock = threading.Lock()
+        self._wake_event = threading.Event()
+        self._stopped = False
+        self._pending_request: tuple[int, str, str, int, bool] | None = None
+        self._thread = threading.Thread(target=self._run, name="OsmAndSearchWorker", daemon=True)
+        self._thread.start()
+
+    def submit(
+        self,
+        request_id: int,
+        query: str,
+        *,
+        locale: str,
+        limit: int,
+        include_poi_fallback: bool,
+    ) -> None:
+        with self._lock:
+            self._pending_request = (request_id, query, locale, limit, include_poi_fallback)
+            self._wake_event.set()
+        self._service.abort()
+
+    def shutdown(self) -> None:
+        with self._lock:
+            self._stopped = True
+            self._pending_request = None
+            self._wake_event.set()
+        self._service.abort()
+        self._thread.join(timeout=2.0)
+        self._service.shutdown()
+
+    def _run(self) -> None:
+        while True:
+            self._wake_event.wait()
+            with self._lock:
+                if self._stopped:
+                    return
+                request = self._pending_request
+                self._pending_request = None
+                self._wake_event.clear()
+
+            if request is None:
+                continue
+
+            request_id, query, locale, limit, include_poi_fallback = request
+            try:
+                results = self._service.search(
+                    query,
+                    limit=limit,
+                    locale=locale,
+                    include_poi_fallback=include_poi_fallback,
+                )
+            except Exception as exc:
+                with self._lock:
+                    if self._stopped:
+                        return
+                self.errorReady.emit(request_id, str(exc))
+                continue
+
+            with self._lock:
+                if self._stopped:
+                    return
+            self.resultsReady.emit(request_id, results)
 
 
 def check_opengl_support() -> bool:
@@ -283,6 +368,9 @@ class MainWindow(QMainWindow):
     """Primary application window that hosts an interactive map widget."""
 
     PAN_FRACTION = 0.18
+    SEARCH_RESULT_LIMIT = 5
+    SEARCH_DEBOUNCE_MS = 80
+    SEARCH_FOCUS_ZOOM = 8.0
 
     def __init__(
         self,
@@ -302,9 +390,17 @@ class MainWindow(QMainWindow):
         self._map_source = (map_source or MapSourceSpec.osmand_default(self._package_root)).resolved(
             self._package_root,
         )
+        self._search_worker: SearchWorker | None = None
+        self._search_results_data: list[SearchSuggestion] = []
+        self._search_cache: dict[str, list[SearchSuggestion]] = {}
+        self._latest_search_request_id = 0
 
-        self._map_widget: MapWidgetBase = self._create_map_widget(map_source=self._map_source)
-        self._set_central_map(self._map_widget)
+        self._create_search_ui()
+        self._reset_search_service(self._map_source)
+
+        self._map_widget: MapWidgetBase | None = None
+        initial_widget = self._create_map_widget(map_source=self._map_source)
+        self._set_central_map(initial_widget)
 
         self._create_actions()
         self._create_menus()
@@ -360,6 +456,40 @@ class MainWindow(QMainWindow):
 
         file_menu = menu_bar.addMenu("File")
         file_menu.addAction(self._action_open_map_source)
+
+    def _create_search_ui(self) -> None:
+        self._central_container = QWidget(self)
+        self._central_layout = QVBoxLayout(self._central_container)
+        self._central_layout.setContentsMargins(8, 8, 8, 8)
+        self._central_layout.setSpacing(6)
+
+        self._search_input = QLineEdit(self._central_container)
+        self._search_input.setClearButtonEnabled(True)
+        self._search_input.setPlaceholderText("Search place names, for example 北京 or Beijing")
+        self._search_input.installEventFilter(self)
+        self._search_input.textEdited.connect(self._schedule_search)
+
+        self._search_results = QListWidget(self._central_container)
+        self._search_results.setMaximumHeight(180)
+        self._search_results.setAlternatingRowColors(True)
+        self._search_results.setVisible(False)
+        self._search_results.itemActivated.connect(self._activate_search_item)
+        self._search_results.itemClicked.connect(self._activate_search_item)
+
+        self._map_host = QWidget(self._central_container)
+        self._map_layout = QVBoxLayout(self._map_host)
+        self._map_layout.setContentsMargins(0, 0, 0, 0)
+        self._map_layout.setSpacing(0)
+
+        self._central_layout.addWidget(self._search_input)
+        self._central_layout.addWidget(self._search_results)
+        self._central_layout.addWidget(self._map_host, 1)
+        self.setCentralWidget(self._central_container)
+
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(self.SEARCH_DEBOUNCE_MS)
+        self._search_timer.timeout.connect(self._perform_search)
 
     def _create_map_widget(self, *, map_source: MapSourceSpec) -> MapWidgetBase:
         if self._native_widget_cls is not None:
@@ -433,6 +563,9 @@ class MainWindow(QMainWindow):
             return
 
         self._map_source = new_source
+        self._reset_search_service(new_source)
+        self._clear_search_results()
+        self._search_input.clear()
         self._set_central_map(widget)
         self._announce_backend_state()
 
@@ -507,23 +640,213 @@ class MainWindow(QMainWindow):
         self._refresh_window_chrome()
 
     def _set_central_map(self, widget: MapWidgetBase) -> None:
-        old = self.takeCentralWidget()
+        old = getattr(self, "_map_widget", None)
         if old is not None:
             if hasattr(old, "viewChanged"):
                 try:
                     old.viewChanged.disconnect(self._handle_view_changed)  # type: ignore[attr-defined]
                 except (RuntimeError, TypeError):
                     pass
+            self._map_layout.removeWidget(old)  # type: ignore[arg-type]
             if hasattr(old, "shutdown"):
                 old.shutdown()  # type: ignore[call-arg]
+            old.setParent(None)
             old.deleteLater()
 
         self._map_widget = widget
-        self.setCentralWidget(self._map_widget)
+        self._map_layout.addWidget(self._map_widget)
         if hasattr(self._map_widget, "viewChanged"):
             self._map_widget.viewChanged.connect(self._handle_view_changed)  # type: ignore[attr-defined]
         self._map_widget.setFocus()
         self._refresh_window_chrome()
+
+    def _reset_search_service(self, map_source: MapSourceSpec) -> None:
+        if self._search_worker is not None:
+            self._search_worker.shutdown()
+            self._search_worker = None
+        self._search_cache.clear()
+        self._latest_search_request_id = 0
+
+        try:
+            worker = SearchWorker(OsmAndSearchService(map_source))
+        except Exception as exc:
+            self._search_input.setEnabled(False)
+            self._search_input.setPlaceholderText("Search unavailable until the native OsmAnd library is rebuilt")
+            self.statusBar().showMessage(f"Search unavailable: {exc}", 8000)
+            return
+
+        worker.resultsReady.connect(self._handle_search_results)
+        worker.errorReady.connect(self._handle_search_error)
+        self._search_worker = worker
+        self._search_input.setEnabled(True)
+        self._search_input.setPlaceholderText("Search place names, for example 北京 or Beijing")
+
+    def _should_search_query(self, query: str) -> bool:
+        trimmed = query.strip()
+        if not trimmed:
+            return False
+        if any(ord(character) > 127 for character in trimmed):
+            return len(trimmed) >= 1
+        return len(trimmed) >= 2
+
+    def _preview_cached_suggestions(self, query: str) -> list[SearchSuggestion]:
+        trimmed = query.strip()
+        if not trimmed:
+            return []
+
+        if trimmed in self._search_cache:
+            return self._search_cache[trimmed][: self.SEARCH_RESULT_LIMIT]
+
+        best_prefix = ""
+        for cached_query in self._search_cache:
+            if trimmed.startswith(cached_query) and len(cached_query) > len(best_prefix):
+                best_prefix = cached_query
+
+        if not best_prefix:
+            return []
+
+        lowered_query = trimmed.casefold()
+        filtered = [
+            suggestion
+            for suggestion in self._search_cache[best_prefix]
+            if lowered_query in f"{suggestion.display_name} {suggestion.secondary_text}".casefold()
+        ]
+        return filtered[: self.SEARCH_RESULT_LIMIT]
+
+    def _schedule_search(self, text: str) -> None:
+        trimmed = text.strip()
+        if not self._should_search_query(trimmed) or self._search_worker is None:
+            self._search_timer.stop()
+            self._clear_search_results()
+            return
+        preview = self._preview_cached_suggestions(trimmed)
+        if preview:
+            self._apply_search_suggestions(preview)
+        self._search_timer.start()
+
+    def _perform_search(self) -> None:
+        query = self._search_input.text().strip()
+        if not self._should_search_query(query) or self._search_worker is None:
+            self._clear_search_results()
+            return
+
+        locale = QLocale.system().name().split("_", 1)[0].lower()
+        self._latest_search_request_id += 1
+        self._search_worker.submit(
+            self._latest_search_request_id,
+            query,
+            locale=locale,
+            limit=self.SEARCH_RESULT_LIMIT,
+            include_poi_fallback=True,
+        )
+
+    def _handle_search_results(self, request_id: int, suggestions: list[SearchSuggestion]) -> None:
+        if request_id != self._latest_search_request_id:
+            return
+        query = self._search_input.text().strip()
+        if not self._should_search_query(query):
+            self._clear_search_results()
+            return
+
+        self._search_cache[query] = suggestions[: self.SEARCH_RESULT_LIMIT]
+        if len(self._search_cache) > 32:
+            oldest_key = next(iter(self._search_cache))
+            self._search_cache.pop(oldest_key, None)
+        self._apply_search_suggestions(suggestions)
+
+    def _handle_search_error(self, request_id: int, message: str) -> None:
+        if request_id != self._latest_search_request_id:
+            return
+        self._clear_search_results()
+        self.statusBar().showMessage(f"Search failed: {message}", 5000)
+
+    def _apply_search_suggestions(self, suggestions: list[SearchSuggestion]) -> None:
+        self._search_results.clear()
+        self._search_results_data = suggestions[: self.SEARCH_RESULT_LIMIT]
+        for index, suggestion in enumerate(self._search_results_data):
+            item = QListWidgetItem(suggestion.display_name)
+            if suggestion.secondary_text:
+                item.setText(f"{suggestion.display_name} - {suggestion.secondary_text}")
+                item.setToolTip(suggestion.secondary_text)
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            self._search_results.addItem(item)
+
+        has_results = bool(self._search_results_data)
+        self._search_results.setVisible(has_results)
+        if has_results:
+            self._search_results.setCurrentRow(0)
+
+    def _clear_search_results(self) -> None:
+        self._search_results_data = []
+        self._search_results.clear()
+        self._search_results.setVisible(False)
+
+    def _activate_search_item(self, item: QListWidgetItem) -> None:
+        index = item.data(Qt.ItemDataRole.UserRole)
+        if index is None:
+            return
+        self._activate_search_index(int(index))
+
+    def _activate_search_index(self, index: int) -> None:
+        if index < 0 or index >= len(self._search_results_data):
+            return
+
+        suggestion = self._search_results_data[index]
+        self._search_input.setText(suggestion.display_name)
+        self._clear_search_results()
+        self._map_widget.center_on(suggestion.longitude, suggestion.latitude)
+        if self._map_widget.zoom < self.SEARCH_FOCUS_ZOOM:
+            self._map_widget.set_zoom(self.SEARCH_FOCUS_ZOOM)
+        self._map_widget.setFocus()
+        self._refresh_window_chrome()
+
+    def _move_search_selection(self, step: int) -> None:
+        if not self._search_results_data:
+            return
+
+        current_row = self._search_results.currentRow()
+        if current_row < 0:
+            current_row = 0
+        next_row = (current_row + step) % len(self._search_results_data)
+        self._search_results.setCurrentRow(next_row)
+        self._search_results.scrollToItem(self._search_results.item(next_row))
+        self._search_results.setVisible(True)
+
+    def _activate_current_search_selection(self) -> None:
+        if not self._search_results_data:
+            self._perform_search()
+        if not self._search_results_data:
+            return
+
+        current_row = self._search_results.currentRow()
+        if current_row < 0:
+            current_row = 0
+        self._activate_search_index(current_row)
+
+    def eventFilter(self, watched: object, event: QEvent) -> bool:  # type: ignore[override]
+        if watched is self._search_input and event.type() == QEvent.Type.KeyPress:
+            key = event.key()
+            if key == Qt.Key.Key_Down:
+                self._move_search_selection(1)
+                return True
+            if key == Qt.Key.Key_Up:
+                self._move_search_selection(-1)
+                return True
+            if key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+                self._activate_current_search_selection()
+                return True
+            if key == Qt.Key.Key_Escape:
+                self._clear_search_results()
+                return True
+        return super().eventFilter(watched, event)
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+        if self._search_worker is not None:
+            self._search_worker.shutdown()
+            self._search_worker = None
+        if self._map_widget is not None and hasattr(self._map_widget, "shutdown"):
+            self._map_widget.shutdown()
+        super().closeEvent(event)
 
 
 def _schedule_screenshot_capture(

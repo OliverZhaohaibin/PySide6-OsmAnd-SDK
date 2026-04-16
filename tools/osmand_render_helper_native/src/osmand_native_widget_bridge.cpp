@@ -1,4 +1,5 @@
 #include "osmand_native_map_widget.h"
+#include "osmand_search_service.h"
 
 #include <algorithm>
 #include <cstring>
@@ -31,6 +32,11 @@ void writeErrorMessage(const QString& message, wchar_t* buffer, int bufferCapaci
 inline OsmAndNativeMapWidget* widgetFromPointer(void* widgetPointer)
 {
     return reinterpret_cast<OsmAndNativeMapWidget*>(widgetPointer);
+}
+
+inline OsmAndSearchService* searchServiceFromPointer(void* servicePointer)
+{
+    return reinterpret_cast<OsmAndSearchService*>(servicePointer);
 }
 }
 
@@ -152,5 +158,78 @@ OSMAND_EXPORT int osmand_widget_project_lonlat(
     *screenX = 0.0;
     *screenY = 0.0;
     return 0;
+}
+
+OSMAND_EXPORT void* osmand_create_search_service(
+    const wchar_t* obfPath,
+    const wchar_t* resourcesRoot,
+    wchar_t* errorBuffer,
+    int errorBufferCapacity)
+{
+    auto service = std::make_unique<OsmAndSearchService>(OsmAndSearchService::Configuration{
+        QString::fromWCharArray(obfPath ? obfPath : L""),
+        QString::fromWCharArray(resourcesRoot ? resourcesRoot : L""),
+    });
+
+    QString errorMessage;
+    if (!service->initialize(errorMessage))
+    {
+        writeErrorMessage(errorMessage, errorBuffer, errorBufferCapacity);
+        return nullptr;
+    }
+
+    return service.release();
+}
+
+OSMAND_EXPORT void osmand_destroy_search_service(void* servicePointer)
+{
+    delete searchServiceFromPointer(servicePointer);
+}
+
+OSMAND_EXPORT void osmand_abort_search(void* servicePointer)
+{
+    if (auto* service = searchServiceFromPointer(servicePointer))
+        service->abort();
+}
+
+OSMAND_EXPORT int osmand_search_query(
+    void* servicePointer,
+    const wchar_t* query,
+    int limit,
+    const wchar_t* locale,
+    int includePoiFallback,
+    wchar_t* outputBuffer,
+    int outputBufferCapacity,
+    wchar_t* errorBuffer,
+    int errorBufferCapacity)
+{
+    if (!outputBuffer || outputBufferCapacity <= 0)
+    {
+        writeErrorMessage(QStringLiteral("output buffer is not available"), errorBuffer, errorBufferCapacity);
+        return 0;
+    }
+
+    const auto* service = searchServiceFromPointer(servicePointer);
+    if (!service)
+    {
+        writeErrorMessage(QStringLiteral("search service pointer is null"), errorBuffer, errorBufferCapacity);
+        return 0;
+    }
+
+    QString errorMessage;
+    const auto payload = service->search(
+        QString::fromWCharArray(query ? query : L""),
+        limit,
+        QString::fromWCharArray(locale ? locale : L""),
+        includePoiFallback != 0,
+        errorMessage);
+    if (!errorMessage.isEmpty())
+    {
+        writeErrorMessage(errorMessage, errorBuffer, errorBufferCapacity);
+        return 0;
+    }
+
+    writeErrorMessage(payload, outputBuffer, outputBufferCapacity);
+    return 1;
 }
 }

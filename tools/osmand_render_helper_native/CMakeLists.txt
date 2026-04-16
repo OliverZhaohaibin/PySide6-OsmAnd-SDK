@@ -99,6 +99,8 @@ include("${OSMAND_VENDOR_ROOT}/core/core.cmake")
 set(OSMAND_COMMON_SOURCES
     src/file_system_core_resources_provider.cpp
     src/file_system_core_resources_provider.h
+    src/osmand_core_runtime.cpp
+    src/osmand_core_runtime.h
 )
 
 add_executable(osmand_render_helper
@@ -110,6 +112,8 @@ add_library(osmand_native_widget SHARED
     ${OSMAND_COMMON_SOURCES}
     src/osmand_native_map_widget.cpp
     src/osmand_native_map_widget.h
+    src/osmand_search_service.cpp
+    src/osmand_search_service.h
     src/osmand_native_widget_bridge.cpp
 )
 

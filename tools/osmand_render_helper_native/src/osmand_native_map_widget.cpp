@@ -1,12 +1,12 @@
 #include "osmand_native_map_widget.h"
 
 #include "file_system_core_resources_provider.h"
+#include "osmand_core_runtime.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <cmath>
 #include <memory>
-#include <mutex>
 
 #include <QDir>
 #include <QCryptographicHash>
@@ -70,74 +70,6 @@ constexpr int kConcurrentObfReadLimit = 0;
 constexpr GLenum kGlColorBufferBit = 0x00004000;
 constexpr GLenum kGlDepthBufferBit = 0x00000100;
 constexpr GLenum kGlScissorTest = 0x0C11;
-
-class CoreRuntime
-{
-public:
-    static CoreRuntime& instance()
-    {
-        static CoreRuntime runtime;
-        return runtime;
-    }
-
-    bool acquire(const QString& resourcesRoot, QString& errorMessage)
-    {
-        std::lock_guard<std::mutex> lock(_mutex);
-
-        if (_refCount > 0)
-        {
-            if (_resourcesRoot != resourcesRoot)
-            {
-                errorMessage = QStringLiteral("OsmAnd core is already initialized with a different resources root");
-                return false;
-            }
-            ++_refCount;
-            return true;
-        }
-
-        const auto provider = std::make_shared<FileSystemCoreResourcesProvider>(resourcesRoot);
-        if (!provider->containsResource(QStringLiteral("map/styles/default.render.xml")))
-        {
-            errorMessage = QStringLiteral("default.render.xml was not found in the mapped OsmAnd resources");
-            return false;
-        }
-
-        const auto fontsRoot = QDir(resourcesRoot).filePath(QStringLiteral("rendering_styles/fonts"));
-        const auto fontsRootUtf8 = QFile::encodeName(QDir::toNativeSeparators(fontsRoot));
-        const auto bitness = OsmAnd::InitializeCore(provider, fontsRootUtf8.constData());
-        if (bitness == 0)
-        {
-            errorMessage = QStringLiteral("OsmAnd::InitializeCore failed");
-            return false;
-        }
-
-        _provider = provider;
-        _resourcesRoot = resourcesRoot;
-        _refCount = 1;
-        return true;
-    }
-
-    void release()
-    {
-        std::lock_guard<std::mutex> lock(_mutex);
-        if (_refCount <= 0)
-            return;
-
-        --_refCount;
-        if (_refCount == 0)
-        {
-            _provider.reset();
-            _resourcesRoot.clear();
-            OsmAnd::ReleaseCore();
-        }
-    }
-
-private:
-    std::mutex _mutex;
-    int _refCount = 0;
-    QString _resourcesRoot;
-    std::shared_ptr<const FileSystemCoreResourcesProvider> _provider;
-};
 
 inline double clampLatitude(double latitude)
 {
@@ -287,7 +219,7 @@ OsmAndNativeMapWidget::~OsmAndNativeMapWidget()
 {
     cleanupRenderer();
     if (_resourcesReady)
-        CoreRuntime::instance().release();
+        OsmAndCoreRuntime::instance().release();
 }
 
 double OsmAndNativeMapWidget::zoomLevel() const
@@ -534,13 +466,13 @@ bool OsmAndNativeMapWidget::initializeResources(QString& errorMessage)
         errorMessage = QStringLiteral("OsmAnd resources directory does not exist: %1").arg(_configuration.resourcesRoot);
         return false;
     }
-    if (!CoreRuntime::instance().acquire(_configuration.resourcesRoot, errorMessage))
+    if (!OsmAndCoreRuntime::instance().acquire(_configuration.resourcesRoot, errorMessage))
         return false;
 
     _stylesCollection = std::make_shared<OsmAnd::MapStylesCollection>();
     if (!_stylesCollection->addStyleFromFile(_configuration.stylePath))
     {
-        CoreRuntime::instance().release();
+        OsmAndCoreRuntime::instance().release();
         errorMessage = QStringLiteral("Unable to load rendering style: %1").arg(_configuration.stylePath);
         return false;
     }

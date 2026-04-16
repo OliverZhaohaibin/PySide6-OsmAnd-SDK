@@ -48,6 +48,8 @@ OsmAnd `.obf` files are offline binary map packages. They store the map data con
 
 The bundled `.obf` file is only a default demo dataset. You can replace it with another OsmAnd `.obf` file, select a different file from the preview window, or point the runtime to a custom path through the documented environment variables. Additional `.obf` downloads are available from the official OsmAnd download list: [https://download.osmand.net/list.php](https://download.osmand.net/list.php).
 
+The preview search demo relies on address and POI indexes inside the active `.obf`. The bundled `World_basemap_2.obf` is useful for rendering and basic smoke tests, but reliable place-name search such as `北京` / `Beijing` requires a detailed regional or country `.obf` extract.
+
 ### `styles` Files
 
 Rendering styles are XML-based rule files located under `vendor/osmand/resources/rendering_styles`, usually named like `default.render.xml`, `mapnik.render.xml`, or `snowmobile.render.xml`. These files control how the same `.obf` data is visualized, including colors, line rules, polygon fills, icons, labels, and theme-specific display logic. The Python integration layer passes both the selected `.obf` data source and the active style file into the OsmAnd rendering backend, which makes it possible to switch presentation without changing the underlying map data.
