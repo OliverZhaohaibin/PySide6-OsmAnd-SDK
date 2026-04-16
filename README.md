@@ -140,6 +140,7 @@ python src/maps/main.py --backend auto
 - **Linux**: helper outputs in `tools/osmand_render_helper_native/dist-linux` are generated and ignored by Git
 - when the native widget runtime is available, the preview can use the embedded OsmAnd widget; otherwise the Python rendering path remains available
 - on Linux, the native widget library is built as a `.so` file (shared object); the Python path remains the recommended approach for Linux deployments
+- if you embed the native widget on Linux and hit XCB/GLX issues, see [BUILD.md](BUILD.md) and the [Python SDK Guide](docs/python-sdk-guide.md) for the entry-point Qt runtime flags to apply before `QApplication` starts
 
 ## License
 

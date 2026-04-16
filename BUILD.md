@@ -206,6 +206,46 @@ sudo dnf install cmake
 sudo pacman -S cmake
 ```
 
+**Native widget opens with XCB/GLX or GLEW issues on Linux**
+
+If the preview starts but the native OsmAnd widget fails later with GLX/XCB-related errors, make sure Qt is forced onto the desktop OpenGL path *before* `QApplication` is constructed. The standalone preview already applies the same idea in `src/maps/main.py`; use a similar guard in your own entry point if you embed `NativeOsmAndWidget`.
+
+```python
+import os
+import sys
+from pathlib import Path
+
+from maps.map_sources import has_usable_osmand_native_widget
+
+
+def _prepare_qt_runtime_for_maps() -> None:
+    """Apply Linux Qt platform flags required by the native OsmAnd widget.
+
+    The native OsmAnd widget expects Qt to use the XCB/GLX desktop OpenGL path
+    on Linux; without these flags the application can start successfully and
+    only fail later when the map view is opened with GLEW reporting missing GLX
+    support.
+    """
+
+    if sys.platform != "linux":
+        return
+
+    if os.environ.get("IPHOTO_DISABLE_OPENGL", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return
+
+    maps_package_root = Path(__file__).resolve().parents[2] / "maps"
+    if not has_usable_osmand_native_widget(maps_package_root):
+        return
+
+    if not os.environ.get("QT_QPA_PLATFORM"):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+    if os.environ.get("QT_QPA_PLATFORM") == "xcb":
+        os.environ.setdefault("QT_OPENGL", "desktop")
+        os.environ.setdefault("QT_XCB_GL_INTEGRATION", "xcb_glx")
+```
+
+If you are not using the native widget on Linux, the helper-backed Python backend remains the safer default.
+
 **Build output permissions or missing `.so` files**
 
 Ensure proper permissions and that the build completed:
