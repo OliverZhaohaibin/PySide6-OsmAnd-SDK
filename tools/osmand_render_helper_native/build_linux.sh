@@ -71,8 +71,17 @@ print(pathlib.Path(PySide6.__file__).resolve().parent / "Qt")' 2>/dev/null || tr
         fi
     fi
 
-    # Common Qt installation paths
-    for path in "/usr" "/usr/local/Qt-6" "/opt/Qt6" "${HOME}/Qt/6.*/gcc_64"; do
+    # Common Qt installation paths (fixed paths)
+    for path in "/usr" "/usr/local/Qt-6" "/opt/Qt6"; do
+        if [ -d "${path}/lib/cmake/Qt6" ]; then
+            QT_ROOT="${path}"
+            echo "Found Qt at: ${QT_ROOT}"
+            return 0
+        fi
+    done
+
+    # Qt installer standard layout (glob must be unquoted for expansion)
+    for path in "$HOME"/Qt/6.*/gcc_64; do
         if [ -d "${path}/lib/cmake/Qt6" ]; then
             QT_ROOT="${path}"
             echo "Found Qt at: ${QT_ROOT}"

@@ -72,7 +72,7 @@ def request_tiles(
     tiles_to_request: list[tuple[tuple[int, int], tuple[int, int, int]]],
     tile_manager: TileManager,
 ) -> None:
-    """Submit background load requests for tiles sorted by distance."""
+    """Request tiles in sorted viewport scan-order `(row, col)` priority."""
 
     if not tiles_to_request:
         return
