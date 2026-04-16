@@ -11,12 +11,13 @@ if __package__ in {None, ""}:  # pragma: no cover - direct script bootstrap
         sys.path.insert(0, str(_SRC_ROOT))
 
 import argparse
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence, QOffscreenSurface, QOpenGLContext
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
 
@@ -76,12 +77,6 @@ def choose_native_widget_class(
     if not prefer_native_widget:
         return None, "OpenGL support detected. Using the helper-backed Python OBF renderer."
 
-    # On Linux, the native widget may have OpenGL compatibility issues with certain drivers.
-    # Prefer the Python backend which uses the helper process for rendering.
-    import sys
-    if sys.platform == "linux":
-        return None, "OpenGL support detected. Using the helper-backed Python OBF renderer (native widget disabled on Linux for compatibility)."
-
     if not has_usable_osmand_native_widget(package_root):
         return None, "OpenGL support detected. Native widget unavailable, using the Python OBF renderer."
 
@@ -91,6 +86,26 @@ def choose_native_widget_class(
 
     detail = f" Native widget disabled: {reason}." if reason else ""
     return None, f"OpenGL support detected.{detail} Using the Python OBF renderer."
+
+
+def prepare_qt_runtime_for_backend(backend: str) -> None:
+    """Adjust Qt startup on Linux before ``QApplication`` is constructed.
+
+    The native OsmAnd widget depends on GLEW, which expects a GLX-backed
+    desktop OpenGL context on Linux. Qt will otherwise often prefer a Wayland
+    or EGL path that leaves the native widget stuck on the clear-color frame.
+    """
+
+    normalized_backend = backend.strip().lower()
+    if sys.platform != "linux" or normalized_backend == "python":
+        return
+
+    if not os.environ.get("QT_QPA_PLATFORM"):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+    if os.environ.get("QT_QPA_PLATFORM") == "xcb":
+        os.environ.setdefault("QT_OPENGL", "desktop")
+        os.environ.setdefault("QT_XCB_GL_INTEGRATION", "xcb_glx")
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
@@ -547,6 +562,7 @@ def _schedule_screenshot_capture(
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv if argv is not None else sys.argv[1:])
     parsed_args = build_argument_parser().parse_args(arguments)
+    prepare_qt_runtime_for_backend(parsed_args.backend)
     app = QApplication([Path(__file__).name, *arguments])
 
     package_root = Path(__file__).resolve().parent

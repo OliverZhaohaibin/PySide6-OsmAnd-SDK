@@ -609,6 +609,13 @@ bool OsmAndNativeMapWidget::ensureRenderer()
     setupOptions.gpuWorkerThreadEnabled = false;
     setupOptions.displayDensityFactor = static_cast<float>(std::max(1.0, devicePixelRatioF()));
     setupOptions.pathToOpenGLShadersCache = openGlShadersCachePath();
+#if defined(Q_OS_LINUX)
+    // The default batch-size heuristic can trigger a long shader warm-up on
+    // Linux, leaving the first visible frame blank until enough render passes
+    // complete. Cap the batch width here so startup reaches a drawable map
+    // state promptly without affecting Windows defaults.
+    setupOptions.maxNumberOfRasterMapLayersInBatch = 4;
+#endif
     setupOptions.frameUpdateRequestCallback =
         [widget = QPointer<OsmAndNativeMapWidget>(this)]
         (const OsmAnd::IMapRenderer*)
