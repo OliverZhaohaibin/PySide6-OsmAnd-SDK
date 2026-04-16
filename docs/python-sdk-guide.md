@@ -162,6 +162,44 @@ You can also run the entry point directly:
 python src/maps/main.py --backend auto
 ```
 
+If you plan to use the native widget on Linux and hit XCB/GLX startup issues later, force Qt onto the desktop OpenGL path before creating `QApplication`. The preview entry point already does this kind of setup, but the same guard is useful in your own application entry point:
+
+```python
+import os
+import sys
+from pathlib import Path
+
+from maps.map_sources import has_usable_osmand_native_widget
+
+
+def _prepare_qt_runtime_for_maps() -> None:
+    """Apply Linux Qt platform flags required by the native OsmAnd widget.
+
+    The native OsmAnd widget expects Qt to use the XCB/GLX desktop OpenGL path
+    on Linux; without these flags the application can start successfully and
+    only fail later when the map view is opened with GLEW reporting missing GLX
+    support.
+    """
+
+    if sys.platform != "linux":
+        return
+
+    if os.environ.get("IPHOTO_DISABLE_OPENGL", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return
+
+    maps_package_root = Path(__file__).resolve().parents[2] / "maps"
+    if not has_usable_osmand_native_widget(maps_package_root):
+        return
+
+    if not os.environ.get("QT_QPA_PLATFORM"):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+    if os.environ.get("QT_QPA_PLATFORM") == "xcb":
+        os.environ.setdefault("QT_OPENGL", "desktop")
+        os.environ.setdefault("QT_XCB_GL_INTEGRATION", "xcb_glx")
+```
+
+If you do not need the native widget, `MapGLWidget` and `MapWidget` remain available as the Python-side fallback paths.
+
 Useful arguments:
 
 - `--backend auto`
