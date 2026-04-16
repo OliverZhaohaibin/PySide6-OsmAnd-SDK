@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import QPointF, QRectF
 from PySide6.QtGui import QColor, QPainter
 
-from maps.tile_backend import RasterTile, TilePayload
+from maps.tile_backend import RasterTile
 
 from .tile_collector import collect_tiles, request_tiles
 from .tile_manager import TileManager
@@ -55,7 +55,12 @@ class MapRenderer:
     ) -> None:
         """Draw the current raster map scene into ``painter``."""
 
+        # Clear the viewport with source composition so each frame fully
+        # replaces any preserved pixels from previous GL partial updates.
+        painter.save()
+        painter.setCompositionMode(QPainter.CompositionMode_Source)
         painter.fillRect(0, 0, width, height, QColor("#93b4c9"))
+        painter.restore()
 
         fetch_max_zoom = self._tile_manager.metadata.fetch_max_zoom
         if fetch_max_zoom is None:
@@ -73,6 +78,8 @@ class MapRenderer:
         tiles_to_draw, tiles_to_request = collect_tiles(view_state, self._tile_manager)
         request_tiles(tiles_to_request, self._tile_manager)
 
+        # Tiles are already collected in screen order (top-to-bottom, left-to-right)
+        # by collect_tiles(). Draw them in that order for consistent rendering.
         for _, tile_data, tile_origin_x, tile_origin_y, _, _ in tiles_to_draw:
             if isinstance(tile_data, RasterTile):
                 self._draw_raster_tile(
@@ -103,7 +110,8 @@ class MapRenderer:
         scaled_tile_size: float,
     ) -> None:
         painter.save()
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        painter.setCompositionMode(QPainter.CompositionMode_Source)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.drawImage(
             QRectF(origin_x, origin_y, scaled_tile_size, scaled_tile_size),
             tile.image,

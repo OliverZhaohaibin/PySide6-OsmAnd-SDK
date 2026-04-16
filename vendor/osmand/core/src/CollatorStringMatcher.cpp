@@ -8,7 +8,7 @@ OsmAnd::CollatorStringMatcher::CollatorStringMatcher(const QString& part, const 
 {
     QString part_ = CollatorStringMatcher_P::lowercaseAndAlignChars(part);
     StringMatcherMode mode_ = mode;
-    if (part_.length() > 0 && part_.at(part_.length() - 1) == L'.') {
+    if (part_.length() > 0 && part_.at(part_.length() - 1) == QChar('.')) {
         part_ = part_.mid(0, part.length() - 1);
         if (mode == StringMatcherMode::CHECK_EQUALS_FROM_SPACE) {
             mode_ = StringMatcherMode::CHECK_STARTS_FROM_SPACE;

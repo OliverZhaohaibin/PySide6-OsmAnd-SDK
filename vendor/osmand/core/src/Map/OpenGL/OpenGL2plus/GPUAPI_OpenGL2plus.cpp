@@ -90,8 +90,13 @@ bool OsmAnd::GPUAPI_OpenGL2plus::initialize()
     if (!ok)
         return false;
 
-    if (glewInit() != GLEW_NO_ERROR)
+    glewExperimental = GL_TRUE;
+    const auto glewResult = glewInit();
+    if (glewResult != GLEW_NO_ERROR)
+    {
+        LogPrintf(LogSeverityLevel::Error, "Failed to initialize GLEW: %s", glewGetErrorString(glewResult));
         return false;
+    }
     // Silence OpenGL error here, it's inside GLEW, so it's not ours
     (void)glGetError();
 
@@ -1136,4 +1141,3 @@ void OsmAnd::GPUAPI_OpenGL2plus::setObjectLabel(ObjectType type_, GLuint name, c
         GL_CHECK_RESULT;
     }
 }
-

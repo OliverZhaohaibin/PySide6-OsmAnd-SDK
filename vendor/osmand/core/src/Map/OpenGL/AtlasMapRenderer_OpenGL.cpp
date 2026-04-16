@@ -162,7 +162,8 @@ bool OsmAnd::AtlasMapRenderer_OpenGL::doRenderFrame(IMapRenderer_Metrics::Metric
     if (!currentDebugSettings->disableSkyStage)
     {
         Stopwatch skyStageStopwatch(metric != nullptr);
-        if (_skyStage->render(metric) != MapRendererStage::StageResult::Success)
+        const auto stageResult = _skyStage->render(metric);
+        if (stageResult != MapRendererStage::StageResult::Success)
             ok = false;
         if (metric)
             metric->elapsedTimeForSkyStage = skyStageStopwatch.elapsed();
@@ -4164,4 +4165,3 @@ OsmAnd::AtlasMapRendererMap3DObjectsStage* OsmAnd::AtlasMapRenderer_OpenGL::crea
 {
     return new AtlasMapRendererMap3DObjectsStage_OpenGL(this);
 }
-

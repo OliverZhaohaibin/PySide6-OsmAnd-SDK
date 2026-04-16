@@ -11,12 +11,13 @@ if __package__ in {None, ""}:  # pragma: no cover - direct script bootstrap
         sys.path.insert(0, str(_SRC_ROOT))
 
 import argparse
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QKeySequence, QOffscreenSurface, QOpenGLContext
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow, QMessageBox
 
@@ -87,6 +88,26 @@ def choose_native_widget_class(
     return None, f"OpenGL support detected.{detail} Using the Python OBF renderer."
 
 
+def prepare_qt_runtime_for_backend(backend: str) -> None:
+    """Adjust Qt startup on Linux before ``QApplication`` is constructed.
+
+    The native OsmAnd widget depends on GLEW, which expects a GLX-backed
+    desktop OpenGL context on Linux. Qt will otherwise often prefer a Wayland
+    or EGL path that leaves the native widget stuck on the clear-color frame.
+    """
+
+    normalized_backend = backend.strip().lower()
+    if sys.platform != "linux" or normalized_backend == "python":
+        return
+
+    if not os.environ.get("QT_QPA_PLATFORM"):
+        os.environ["QT_QPA_PLATFORM"] = "xcb"
+    if os.environ.get("QT_QPA_PLATFORM") == "xcb":
+        os.environ.setdefault("QT_OPENGL", "desktop")
+        os.environ.setdefault("QT_XCB_GL_INTEGRATION", "xcb_glx")
+        QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseDesktopOpenGL, True)
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     """Return the CLI parser used by the standalone preview entry point."""
 
@@ -155,7 +176,7 @@ def choose_launch_configuration(
         if not use_opengl:
             raise TileLoadingError("OpenGL support is unavailable, so the native OsmAnd widget can not be forced")
         if not has_usable_osmand_native_widget(package_root):
-            raise TileLoadingError("The native OsmAnd widget DLL is not available")
+            raise TileLoadingError("The native OsmAnd widget library is not available")
         is_available, reason = probe_native_widget_runtime(package_root)
         if not is_available:
             detail = f": {reason}" if reason else ""
@@ -224,7 +245,7 @@ def format_map_runtime_diagnostics(
     native_library_path = getattr(map_widget, "loaded_library_path", lambda: None)()
     native_library_suffix = ""
     if native_library_path:
-        native_library_suffix = f" native_dll={native_library_path}"
+        native_library_suffix = f" native_library={native_library_path}"
 
     return (
         "[maps.main] "
@@ -517,6 +538,12 @@ def _schedule_screenshot_capture(
     delay_ms = max(0, int(capture_delay_ms))
 
     def _capture_and_exit() -> None:
+        # Properly shutdown the map widget before exiting to avoid
+        # "QProcess: Destroyed while process is still running" warnings
+        map_widget = window._map_widget
+        if hasattr(map_widget, "shutdown"):
+            map_widget.shutdown()
+
         if window.capture_screenshot(screenshot_path):
             print(f"[maps.main] screenshot={screenshot_path.resolve()}", flush=True)
             app.exit(0)
@@ -535,6 +562,7 @@ def _schedule_screenshot_capture(
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = list(argv if argv is not None else sys.argv[1:])
     parsed_args = build_argument_parser().parse_args(arguments)
+    prepare_qt_runtime_for_backend(parsed_args.backend)
     app = QApplication([Path(__file__).name, *arguments])
 
     package_root = Path(__file__).resolve().parent

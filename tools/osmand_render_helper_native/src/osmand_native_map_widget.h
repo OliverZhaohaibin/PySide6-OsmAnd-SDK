@@ -6,6 +6,7 @@
 
 #include <QOpenGLWidget>
 #include <QPointF>
+#include <QShowEvent>
 #include <QString>
 #include <QTimer>
 
@@ -51,6 +52,7 @@ protected:
     void initializeGL() override;
     void resizeGL(int width, int height) override;
     void paintGL() override;
+    void showEvent(QShowEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
@@ -68,6 +70,7 @@ private:
     void scheduleInteractiveRenderingFinish();
     void finishInteractiveRendering();
     void cleanupRenderer();
+    void requestFullUpdate();
     void wrapCenter();
     double worldSize() const;
 

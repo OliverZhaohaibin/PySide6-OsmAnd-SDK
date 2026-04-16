@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,8 +20,12 @@ from maps.map_sources import MapBackendMetadata, MapSourceSpec
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_QT_ROOT = Path(r"C:\Qt\6.10.1\mingw_64")
-DEFAULT_MINGW_ROOT = Path(r"C:\Qt\Tools\mingw1310_64")
+if sys.platform == "win32":
+    DEFAULT_QT_ROOT = Path(r"C:\Qt\6.10.1\mingw_64")
+    DEFAULT_MINGW_ROOT = Path(r"C:\Qt\Tools\mingw1310_64")
+else:
+    DEFAULT_QT_ROOT = Path("/usr")
+    DEFAULT_MINGW_ROOT = Path()
 ENV_QT_ROOT = "IPHOTO_OSMAND_QT_ROOT"
 ENV_MINGW_ROOT = "IPHOTO_OSMAND_MINGW_ROOT"
 DEFAULT_HELPER_INIT_TIMEOUT_MS = 30000
@@ -313,30 +318,49 @@ class OsmAndRasterBackend:
 
 
 def _helper_process_environment(helper_executable: Path) -> QProcessEnvironment:
-    """Return a process environment that can load the helper's native DLLs."""
+    """Return a process environment that can load the helper's native libraries."""
 
     env = QProcessEnvironment.systemEnvironment()
-    path_entries = _existing_path_entries(env)
-    prepended_entries = [str(path) for path in _helper_runtime_paths(helper_executable)]
+    runtime_paths = _helper_runtime_paths(helper_executable)
 
-    merged_path: list[str] = []
-    seen: set[str] = set()
-    for entry in (*prepended_entries, *path_entries):
-        normalized = entry.strip()
-        if not normalized:
-            continue
-        key = normalized.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        merged_path.append(normalized)
+    if os.name == "nt":
+        # On Windows, DLLs are resolved via PATH.
+        path_entries = _existing_path_entries(env)
+        prepended_entries = [str(path) for path in runtime_paths]
 
-    env.insert("PATH", os.pathsep.join(merged_path))
+        merged_path: list[str] = []
+        seen: set[str] = set()
+        for entry in (*prepended_entries, *path_entries):
+            normalized = entry.strip()
+            if not normalized:
+                continue
+            key = normalized.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_path.append(normalized)
+
+        env.insert("PATH", os.pathsep.join(merged_path))
+    else:
+        # On Linux/macOS, shared libraries are resolved via LD_LIBRARY_PATH /
+        # DYLD_LIBRARY_PATH.  Also prepend the helper's directory to PATH so
+        # the helper executable itself is found.
+        path_entries = _existing_path_entries(env)
+        lib_dirs = [str(p) for p in runtime_paths if p.is_dir()]
+        merged_path = [str(p) for p in runtime_paths] + list(path_entries)
+        env.insert("PATH", os.pathsep.join(merged_path))
+
+        ld_key = "DYLD_LIBRARY_PATH" if sys.platform == "darwin" else "LD_LIBRARY_PATH"
+        existing_ld = env.value(ld_key, "")
+        existing_dirs = [d for d in existing_ld.split(os.pathsep) if d]
+        merged_ld = lib_dirs + existing_dirs
+        env.insert(ld_key, os.pathsep.join(merged_ld))
+
     return env
 
 
 def _helper_runtime_paths(helper_executable: Path) -> tuple[Path, ...]:
-    """Return PATH entries that let the native helper resolve Qt and MinGW DLLs."""
+    """Return directories that let the native helper resolve Qt and runtime libraries."""
 
     candidates: list[Path] = [helper_executable.resolve().parent]
 
@@ -348,12 +372,25 @@ def _helper_runtime_paths(helper_executable: Path) -> tuple[Path, ...]:
     ):
         candidates.extend(_runtime_bin_candidates(root))
 
-    for root in (
-        os.environ.get(ENV_MINGW_ROOT),
-        os.environ.get("MINGW_ROOT"),
-        str(DEFAULT_MINGW_ROOT),
-    ):
-        candidates.extend(_runtime_bin_candidates(root))
+    if os.name == "nt":
+        for root in (
+            os.environ.get(ENV_MINGW_ROOT),
+            os.environ.get("MINGW_ROOT"),
+            str(DEFAULT_MINGW_ROOT),
+        ):
+            candidates.extend(_runtime_bin_candidates(root))
+
+    # On Linux, also add PySide6's lib directory for shared library resolution
+    if sys.platform == "linux":
+        try:
+            import PySide6
+            pyside_lib = Path(PySide6.__file__).resolve().parent / "Qt" / "lib"
+            if pyside_lib.is_dir():
+                candidates.append(pyside_lib)
+            pyside_parent = Path(PySide6.__file__).resolve().parent
+            candidates.append(pyside_parent)
+        except ImportError:
+            pass
 
     existing: list[Path] = []
     seen: set[Path] = set()

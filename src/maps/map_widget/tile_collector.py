@@ -15,7 +15,7 @@ def collect_tiles(
     tile_manager: TileManager,
 ) -> tuple[
     list[tuple[tuple[int, int, int], TilePayload, float, float, int, int]],
-    list[tuple[float, tuple[int, int, int]]],
+    list[tuple[tuple[int, int], tuple[int, int, int]]],
 ]:
     """Gather tiles that intersect the viewport and schedule missing ones."""
 
@@ -28,9 +28,19 @@ def collect_tiles(
         (view_state.view_top_left_y + view_state.height) / view_state.scaled_tile_size
     )
 
-    tiles_to_draw: list[tuple[tuple[int, int, int], TilePayload, float, float, int, int]] = []
-    tiles_to_request: list[tuple[float, tuple[int, int, int]]] = []
+    # Guard against fractional-zoom rounding seams by drawing/requesting one
+    # tile outside each edge of the viewport.
+    start_tile_x -= 1
+    start_tile_y -= 1
+    end_tile_x += 1
+    end_tile_y += 1
 
+    tiles_to_draw: list[tuple[tuple[int, int, int], TilePayload, float, float, int, int]] = []
+    tiles_to_request: list[tuple[tuple[int, int], tuple[int, int, int]]] = []
+
+    # Iterate tiles in screen order (top-to-bottom, left-to-right) to ensure
+    # consistent rendering and request order. This is especially important
+    # on Linux where the top-left corner may otherwise show ghosting.
     for tile_y in range(start_tile_y, end_tile_y):
         if tile_y < 0 or tile_y >= view_state.tiles_across:
             continue
@@ -46,13 +56,9 @@ def collect_tiles(
             tile_data = tile_manager.get_tile(tile_key)
             if tile_data is None:
                 if not tile_manager.is_tile_missing(tile_key):
-                    tile_center_x = tile_origin_x + view_state.scaled_tile_size / 2.0
-                    tile_center_y = tile_origin_y + view_state.scaled_tile_size / 2.0
-                    dist_sq = (
-                        (tile_center_x - view_state.width / 2.0) ** 2
-                        + (tile_center_y - view_state.height / 2.0) ** 2
-                    )
-                    tiles_to_request.append((dist_sq, tile_key))
+                    # Request missing tiles in strict viewport scan order.
+                    request_priority = (tile_y - start_tile_y, tile_x - start_tile_x)
+                    tiles_to_request.append((request_priority, tile_key))
                 continue
 
             tiles_to_draw.append(
@@ -63,10 +69,10 @@ def collect_tiles(
 
 
 def request_tiles(
-    tiles_to_request: list[tuple[float, tuple[int, int, int]]],
+    tiles_to_request: list[tuple[tuple[int, int], tuple[int, int, int]]],
     tile_manager: TileManager,
 ) -> None:
-    """Submit background load requests for tiles sorted by distance."""
+    """Request tiles in sorted viewport scan-order `(row, col)` priority."""
 
     if not tiles_to_request:
         return

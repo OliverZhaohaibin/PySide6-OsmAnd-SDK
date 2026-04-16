@@ -7,8 +7,36 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(OSMAND_VENDOR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/osmand" CACHE PATH "Directory that contains the copied OsmAnd 'core' and 'core-legacy' source trees")
-set(QT_ROOT "C:/Qt/6.10.1/mingw_64" CACHE PATH "Qt 6 SDK root used to build the helper")
-set(MINGW_ROOT "C:/Qt/Tools/mingw1310_64" CACHE PATH "MinGW toolchain root used to build the helper")
+
+# Platform detection and defaults
+if(NOT DEFINED CMAKE_TARGET_OS)
+    if(UNIX AND NOT APPLE)
+        set(CMAKE_TARGET_OS "linux")
+    elseif(WIN32)
+        set(CMAKE_TARGET_OS "windows")
+    elseif(APPLE)
+        set(CMAKE_TARGET_OS "macosx")
+    endif()
+endif()
+
+# Set platform-specific defaults
+if(CMAKE_TARGET_OS STREQUAL "linux")
+    set(QT_ROOT_DEFAULT "$ENV{HOME}/.local/Qt/6.10.1/gcc_64")
+    set(MINGW_ROOT_DEFAULT "")
+    set(DIST_DIR_DEFAULT "${CMAKE_CURRENT_SOURCE_DIR}/dist-linux")
+elseif(CMAKE_TARGET_OS STREQUAL "windows")
+    set(QT_ROOT_DEFAULT "C:/Qt/6.10.1/mingw_64")
+    set(MINGW_ROOT_DEFAULT "C:/Qt/Tools/mingw1310_64")
+    set(DIST_DIR_DEFAULT "${CMAKE_CURRENT_SOURCE_DIR}/dist")
+elseif(CMAKE_TARGET_OS STREQUAL "macosx")
+    set(QT_ROOT_DEFAULT "/usr/local/Qt-6")
+    set(MINGW_ROOT_DEFAULT "")
+    set(DIST_DIR_DEFAULT "${CMAKE_CURRENT_SOURCE_DIR}/dist-macosx")
+endif()
+
+set(QT_ROOT "${QT_ROOT_DEFAULT}" CACHE PATH "Qt 6 SDK root used to build the helper")
+set(MINGW_ROOT "${MINGW_ROOT_DEFAULT}" CACHE PATH "MinGW toolchain root used to build the helper (Windows only)")
+set(DIST_DIR "${DIST_DIR_DEFAULT}" CACHE PATH "Output directory for built binaries")
 
 if(NOT EXISTS "${OSMAND_VENDOR_ROOT}/core/CMakeLists.txt")
     message(FATAL_ERROR "Missing '${OSMAND_VENDOR_ROOT}/core/CMakeLists.txt'. Copy the vendored OsmAnd sources into '../../vendor/osmand'.")
@@ -25,14 +53,46 @@ find_package(Qt6 REQUIRED COMPONENTS Core Network Gui Widgets OpenGL OpenGLWidge
 
 set(OSMAND_ROOT "${OSMAND_VENDOR_ROOT}" CACHE PATH "Synthetic OsmAnd root that exposes core and core-legacy side by side")
 set(OSMAND_OWN_SHIPPED_QT OFF CACHE BOOL "Use system Qt instead of OsmAnd-shipped Qt")
-set(CMAKE_TARGET_OS "windows" CACHE STRING "OsmAnd target OS")
-set(CMAKE_COMPILER_FAMILY "gcc" CACHE STRING "OsmAnd compiler family")
-set(CMAKE_TARGET_CPU_ARCH "amd64" CACHE STRING "OsmAnd CPU architecture")
-set(CMAKE_TARGET_CPU_ARCH_FAMILY "x86" CACHE STRING "OsmAnd CPU architecture family")
-set(CMAKE_TARGET_CPU_NAME "amd64" CACHE STRING "OsmAnd CPU name")
-set(CMAKE_SHARED_LIBS_ALLOWED_ON_TARGET OFF CACHE BOOL "Build shared libraries when supported")
-set(CMAKE_STATIC_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build static libraries when supported")
-set(ws2_32_LIBRARY ws2_32 CACHE STRING "Winsock library used by MinGW builds")
+
+# Platform-specific OsmAnd build settings
+if(CMAKE_TARGET_OS STREQUAL "linux")
+    set(CMAKE_TARGET_CPU_ARCH "amd64" CACHE STRING "OsmAnd CPU architecture")
+    set(CMAKE_TARGET_CPU_ARCH_FAMILY "x86" CACHE STRING "OsmAnd CPU architecture family")
+    set(CMAKE_TARGET_CPU_NAME "amd64" CACHE STRING "OsmAnd CPU name")
+    set(CMAKE_SHARED_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build shared libraries when supported")
+    set(CMAKE_STATIC_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build static libraries when supported")
+    if(NOT DEFINED CMAKE_COMPILER_FAMILY)
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+            set(OSMAND_COMPILER_FAMILY "clang")
+        elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+            set(OSMAND_COMPILER_FAMILY "gcc")
+        else()
+            set(OSMAND_COMPILER_FAMILY "${CMAKE_CXX_COMPILER_ID}")
+        endif()
+        set(CMAKE_COMPILER_FAMILY "${OSMAND_COMPILER_FAMILY}" CACHE STRING "OsmAnd compiler family")
+    endif()
+
+    # Force -fPIC for all code on Linux (required for shared libraries)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Compile with -fPIC" FORCE)
+elseif(CMAKE_TARGET_OS STREQUAL "windows")
+    set(CMAKE_TARGET_CPU_ARCH "amd64" CACHE STRING "OsmAnd CPU architecture")
+    set(CMAKE_TARGET_CPU_ARCH_FAMILY "x86" CACHE STRING "OsmAnd CPU architecture family")
+    set(CMAKE_TARGET_CPU_NAME "amd64" CACHE STRING "OsmAnd CPU name")
+    set(CMAKE_SHARED_LIBS_ALLOWED_ON_TARGET OFF CACHE BOOL "Build shared libraries when supported")
+    set(CMAKE_STATIC_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build static libraries when supported")
+    set(CMAKE_COMPILER_FAMILY "gcc" CACHE STRING "OsmAnd compiler family")
+    set(ws2_32_LIBRARY ws2_32 CACHE STRING "Winsock library used by MinGW builds")
+endif()
+
+# Include OsmAnd build utilities (required for prepare_upstream macro)
+include("${OSMAND_VENDOR_ROOT}/build/utils/common.cmake")
+
+# Skip embedded Qt build - we use system/PySide6 Qt instead
+set(OSMAND_SYSTEM_QT ON CACHE BOOL "Use system Qt instead of OsmAnd-shipped Qt")
+set(ENV{OSMAND_SYSTEM_QT} "1")
+
+# Include Qt configuration (will skip embedded Qt due to OSMAND_SYSTEM_QT)
+include("${OSMAND_VENDOR_ROOT}/build/qt.cmake")
 
 include("${OSMAND_VENDOR_ROOT}/core/core.cmake")
 
@@ -84,65 +144,78 @@ target_include_directories(osmand_native_widget
 
 set_target_properties(osmand_render_helper PROPERTIES
     OUTPUT_NAME "osmand_render_helper"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_CURRENT_SOURCE_DIR}/dist"
+    RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${DIST_DIR}"
 )
 
 set_target_properties(osmand_native_widget PROPERTIES
     PREFIX ""
     OUTPUT_NAME "osmand_native_widget"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_CURRENT_SOURCE_DIR}/dist"
-    LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_CURRENT_SOURCE_DIR}/dist"
+    RUNTIME_OUTPUT_DIRECTORY "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_DEBUG "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${DIST_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${DIST_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY "${DIST_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_DEBUG "${DIST_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_RELEASE "${DIST_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${DIST_DIR}"
+    LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${DIST_DIR}"
 )
 
-set(_helper_dist_dir "${CMAKE_CURRENT_SOURCE_DIR}/dist")
-set(_windeployqt "${QT_ROOT}/bin/windeployqt.exe")
+# Platform-specific deployment
+if(CMAKE_TARGET_OS STREQUAL "windows")
+    set(_helper_dist_dir "${DIST_DIR}")
+    set(_windeployqt "${QT_ROOT}/bin/windeployqt.exe")
 
-if(EXISTS "${_windeployqt}")
-    add_custom_command(TARGET osmand_render_helper POST_BUILD
-        COMMAND "${_windeployqt}"
-            --no-translations
-            --no-system-d3d-compiler
-            --no-opengl-sw
-            "$<TARGET_FILE:osmand_render_helper>"
-        COMMAND_EXPAND_LISTS
-        VERBATIM
-    )
-    add_custom_command(TARGET osmand_native_widget POST_BUILD
-        COMMAND "${_windeployqt}"
-            --no-translations
-            --no-system-d3d-compiler
-            --no-opengl-sw
-            "$<TARGET_FILE:osmand_native_widget>"
-        COMMAND_EXPAND_LISTS
-        VERBATIM
-    )
-endif()
-
-foreach(_mingw_runtime IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
-    if(EXISTS "${MINGW_ROOT}/bin/${_mingw_runtime}")
+    if(EXISTS "${_windeployqt}")
         add_custom_command(TARGET osmand_render_helper POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${MINGW_ROOT}/bin/${_mingw_runtime}"
-                "${_helper_dist_dir}/${_mingw_runtime}"
+            COMMAND "${_windeployqt}"
+                --no-translations
+                --no-system-d3d-compiler
+                --no-opengl-sw
+                "$<TARGET_FILE:osmand_render_helper>"
+            COMMAND_EXPAND_LISTS
             VERBATIM
         )
         add_custom_command(TARGET osmand_native_widget POST_BUILD
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${MINGW_ROOT}/bin/${_mingw_runtime}"
-                "${_helper_dist_dir}/${_mingw_runtime}"
+            COMMAND "${_windeployqt}"
+                --no-translations
+                --no-system-d3d-compiler
+                --no-opengl-sw
+                "$<TARGET_FILE:osmand_native_widget>"
+            COMMAND_EXPAND_LISTS
             VERBATIM
         )
     endif()
-endforeach()
+
+    foreach(_mingw_runtime IN ITEMS libgcc_s_seh-1.dll libstdc++-6.dll libwinpthread-1.dll)
+        if(EXISTS "${MINGW_ROOT}/bin/${_mingw_runtime}")
+            add_custom_command(TARGET osmand_render_helper POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${MINGW_ROOT}/bin/${_mingw_runtime}"
+                    "${_helper_dist_dir}/${_mingw_runtime}"
+                VERBATIM
+            )
+            add_custom_command(TARGET osmand_native_widget POST_BUILD
+                COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                    "${MINGW_ROOT}/bin/${_mingw_runtime}"
+                    "${_helper_dist_dir}/${_mingw_runtime}"
+                VERBATIM
+            )
+        endif()
+    endforeach()
+elseif(CMAKE_TARGET_OS STREQUAL "linux")
+    # Set RPATH for Linux to find shared libraries relative to executable
+    set_target_properties(osmand_render_helper PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN"
+    )
+    set_target_properties(osmand_native_widget PROPERTIES
+        BUILD_RPATH "$ORIGIN"
+        INSTALL_RPATH "$ORIGIN"
+    )
+endif()

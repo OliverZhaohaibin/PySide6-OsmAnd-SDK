@@ -23,6 +23,7 @@
 #include <QStandardPaths>
 #include <QStringList>
 #include <QThread>
+#include <QtGlobal>
 #include <QWheelEvent>
 
 #include <SkBitmap.h>
@@ -65,6 +66,10 @@ constexpr float kInteractiveSymbolsOpacity = 0.0f;
 constexpr int kInteractionSettleDelayMs = 140;
 constexpr double kPi = 3.14159265358979323846;
 constexpr int kConcurrentObfReadLimit = 0;
+
+constexpr GLenum kGlColorBufferBit = 0x00004000;
+constexpr GLenum kGlDepthBufferBit = 0x00000100;
+constexpr GLenum kGlScissorTest = 0x0C11;
 
 class CoreRuntime
 {
@@ -261,7 +266,18 @@ OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration,
     _interactionTimer.setInterval(kInteractionSettleDelayMs);
     connect(&_interactionTimer, &QTimer::timeout, this, &OsmAndNativeMapWidget::finishInteractiveRendering);
 
-    setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+    // Linux drivers can leave stale content with partial-damage compositing.
+    // Keep a runtime switch: 1 => PartialUpdate (A), 0/default => NoPartialUpdate (B).
+#if defined(Q_OS_LINUX)
+    setUpdateBehavior(
+        qEnvironmentVariableIntValue("IPHOTO_OSMAND_GL_PARTIAL_UPDATE") > 0
+            ? QOpenGLWidget::PartialUpdate
+            : QOpenGLWidget::NoPartialUpdate);
+#else
+    setUpdateBehavior(QOpenGLWidget::PartialUpdate);
+#endif
+    setAttribute(Qt::WA_OpaquePaintEvent, true);
+    setAutoFillBackground(false);
     setMouseTracking(true);
     setFocusPolicy(Qt::StrongFocus);
     setMinimumSize(640, 480);
@@ -300,7 +316,7 @@ void OsmAndNativeMapWidget::setZoomLevel(double zoomLevel)
     _zoomLevel = clampedZoom;
     wrapCenter();
     syncRendererCamera(false);
-    update();
+    requestFullUpdate();
 }
 
 void OsmAndNativeMapWidget::resetView()
@@ -311,7 +327,7 @@ void OsmAndNativeMapWidget::resetView()
     _zoomLevel = _defaultZoomLevel;
     wrapCenter();
     syncRendererCamera(false);
-    update();
+    requestFullUpdate();
 }
 
 void OsmAndNativeMapWidget::panByPixels(double deltaX, double deltaY)
@@ -326,7 +342,7 @@ void OsmAndNativeMapWidget::panByPixels(double deltaX, double deltaY)
     _centerY -= deltaY / currentWorldSize;
     wrapCenter();
     syncRendererCamera(false);
-    update();
+    requestFullUpdate();
 }
 
 void OsmAndNativeMapWidget::setCenterLonLat(double longitude, double latitude)
@@ -337,7 +353,7 @@ void OsmAndNativeMapWidget::setCenterLonLat(double longitude, double latitude)
     _centerY = normalized.y();
     wrapCenter();
     syncRendererCamera(false);
-    update();
+    requestFullUpdate();
 }
 
 QPointF OsmAndNativeMapWidget::centerLonLat() const
@@ -371,18 +387,34 @@ void OsmAndNativeMapWidget::resizeGL(int width, int height)
     Q_UNUSED(width)
     Q_UNUSED(height)
     syncRendererViewport(true);
-    update();
+    requestFullUpdate();
+}
+
+void OsmAndNativeMapWidget::showEvent(QShowEvent* event)
+{
+    QOpenGLWidget::showEvent(event);
+    syncRendererViewport(true);
+    syncRendererCamera(true);
+    requestFullUpdate();
 }
 
 void OsmAndNativeMapWidget::paintGL()
 {
+    if (auto* functions = context() ? context()->functions() : nullptr)
+    {
+        const auto hadScissor = functions->glIsEnabled(kGlScissorTest) == GL_TRUE;
+        if (hadScissor)
+            functions->glDisable(kGlScissorTest);
+
+        functions->glClearColor(0.53f, 0.65f, 0.76f, 1.0f);
+        functions->glClear(kGlColorBufferBit | kGlDepthBufferBit);
+
+        if (hadScissor)
+            functions->glEnable(kGlScissorTest);
+    }
+
     if (!ensureRenderer())
     {
-        if (auto* functions = context() ? context()->functions() : nullptr)
-        {
-            functions->glClearColor(0.53f, 0.65f, 0.76f, 1.0f);
-            functions->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        }
         return;
     }
 
@@ -394,7 +426,7 @@ void OsmAndNativeMapWidget::paintGL()
         _mapRenderer->renderFrame();
 
     if (!_mapRenderer->isIdle() || _mapRenderer->isFrameInvalidated())
-        update();
+        requestFullUpdate();
 }
 
 void OsmAndNativeMapWidget::mousePressEvent(QMouseEvent* event)
@@ -481,7 +513,7 @@ void OsmAndNativeMapWidget::wheelEvent(QWheelEvent* event)
     _centerY = newCenterPixelY / newWorldSize;
     wrapCenter();
     syncRendererCamera(false);
-    update();
+    requestFullUpdate();
     event->accept();
 }
 
@@ -577,6 +609,13 @@ bool OsmAndNativeMapWidget::ensureRenderer()
     setupOptions.gpuWorkerThreadEnabled = false;
     setupOptions.displayDensityFactor = static_cast<float>(std::max(1.0, devicePixelRatioF()));
     setupOptions.pathToOpenGLShadersCache = openGlShadersCachePath();
+#if defined(Q_OS_LINUX)
+    // The default batch-size heuristic can trigger a long shader warm-up on
+    // Linux, leaving the first visible frame blank until enough render passes
+    // complete. Cap the batch width here so startup reaches a drawable map
+    // state promptly without affecting Windows defaults.
+    setupOptions.maxNumberOfRasterMapLayersInBatch = 4;
+#endif
     setupOptions.frameUpdateRequestCallback =
         [widget = QPointer<OsmAndNativeMapWidget>(this)]
         (const OsmAnd::IMapRenderer*)
@@ -584,7 +623,14 @@ bool OsmAndNativeMapWidget::ensureRenderer()
             if (!widget)
                 return;
 
-            QMetaObject::invokeMethod(widget.data(), "update", Qt::QueuedConnection);
+            QMetaObject::invokeMethod(
+                widget.data(),
+                [widget]()
+                {
+                    if (widget)
+                        widget->requestFullUpdate();
+                },
+                Qt::QueuedConnection);
         };
     if (!_mapRenderer->setup(setupOptions))
     {
@@ -864,7 +910,12 @@ void OsmAndNativeMapWidget::finishInteractiveRendering()
         _symbolsSuspendedByInteraction = false;
     }
 
-    update();
+    requestFullUpdate();
+}
+
+void OsmAndNativeMapWidget::requestFullUpdate()
+{
+    QOpenGLWidget::update(rect());
 }
 
 void OsmAndNativeMapWidget::cleanupRenderer()

@@ -7,6 +7,13 @@
 #include <QString>
 #include <QWidget>
 
+// Cross-platform export macro
+#if defined(_WIN32) || defined(__CYGWIN__)
+    #define OSMAND_EXPORT __declspec(dllexport)
+#else
+    #define OSMAND_EXPORT __attribute__((visibility("default")))
+#endif
+
 namespace
 {
 void writeErrorMessage(const QString& message, wchar_t* buffer, int bufferCapacity)
@@ -29,7 +36,7 @@ inline OsmAndNativeMapWidget* widgetFromPointer(void* widgetPointer)
 
 extern "C"
 {
-__declspec(dllexport) void* osmand_create_map_widget(
+OSMAND_EXPORT void* osmand_create_map_widget(
     void* parentWidgetPointer,
     const wchar_t* obfPath,
     const wchar_t* resourcesRoot,
@@ -59,52 +66,52 @@ __declspec(dllexport) void* osmand_create_map_widget(
     return widget;
 }
 
-__declspec(dllexport) double osmand_widget_get_zoom(void* widgetPointer)
+OSMAND_EXPORT double osmand_widget_get_zoom(void* widgetPointer)
 {
     if (const auto* widget = widgetFromPointer(widgetPointer))
         return widget->zoomLevel();
     return 0.0;
 }
 
-__declspec(dllexport) double osmand_widget_get_min_zoom(void* widgetPointer)
+OSMAND_EXPORT double osmand_widget_get_min_zoom(void* widgetPointer)
 {
     if (const auto* widget = widgetFromPointer(widgetPointer))
         return widget->minZoomLevel();
     return 0.0;
 }
 
-__declspec(dllexport) double osmand_widget_get_max_zoom(void* widgetPointer)
+OSMAND_EXPORT double osmand_widget_get_max_zoom(void* widgetPointer)
 {
     if (const auto* widget = widgetFromPointer(widgetPointer))
         return widget->maxZoomLevel();
     return 0.0;
 }
 
-__declspec(dllexport) void osmand_widget_set_zoom(void* widgetPointer, double zoomLevel)
+OSMAND_EXPORT void osmand_widget_set_zoom(void* widgetPointer, double zoomLevel)
 {
     if (auto* widget = widgetFromPointer(widgetPointer))
         widget->setZoomLevel(zoomLevel);
 }
 
-__declspec(dllexport) void osmand_widget_reset_view(void* widgetPointer)
+OSMAND_EXPORT void osmand_widget_reset_view(void* widgetPointer)
 {
     if (auto* widget = widgetFromPointer(widgetPointer))
         widget->resetView();
 }
 
-__declspec(dllexport) void osmand_widget_pan_by_pixels(void* widgetPointer, double deltaX, double deltaY)
+OSMAND_EXPORT void osmand_widget_pan_by_pixels(void* widgetPointer, double deltaX, double deltaY)
 {
     if (auto* widget = widgetFromPointer(widgetPointer))
         widget->panByPixels(deltaX, deltaY);
 }
 
-__declspec(dllexport) void osmand_widget_set_center_lonlat(void* widgetPointer, double longitude, double latitude)
+OSMAND_EXPORT void osmand_widget_set_center_lonlat(void* widgetPointer, double longitude, double latitude)
 {
     if (auto* widget = widgetFromPointer(widgetPointer))
         widget->setCenterLonLat(longitude, latitude);
 }
 
-__declspec(dllexport) void osmand_widget_get_center_lonlat(void* widgetPointer, double* longitude, double* latitude)
+OSMAND_EXPORT void osmand_widget_get_center_lonlat(void* widgetPointer, double* longitude, double* latitude)
 {
     if (!longitude || !latitude)
         return;
@@ -121,7 +128,7 @@ __declspec(dllexport) void osmand_widget_get_center_lonlat(void* widgetPointer, 
     *latitude = 0.0;
 }
 
-__declspec(dllexport) int osmand_widget_project_lonlat(
+OSMAND_EXPORT int osmand_widget_project_lonlat(
     void* widgetPointer,
     double longitude,
     double latitude,
@@ -147,5 +154,3 @@ __declspec(dllexport) int osmand_widget_project_lonlat(
     return 0;
 }
 }
-
-

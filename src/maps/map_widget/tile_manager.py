@@ -3,77 +3,65 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections import OrderedDict
 from collections import deque
 from typing import Iterable
 
-from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from maps.errors import TileLoadingError
 from maps.map_sources import MapBackendMetadata
 from maps.tile_backend import TileBackend, TilePayload
 
+LOGGER = logging.getLogger(__name__)
 
-class _TileWorker(QObject):
-    """Background worker that retrieves tiles without blocking the GUI."""
 
-    tile_loaded = Signal(int, int, int, object)
-    tile_missing = Signal(int, int, int)
+class _TileLoaderWorker(QObject):
+    """Perform blocking :meth:`~TileBackend.load_tile` calls in a dedicated thread.
+
+    Instances are moved to a :class:`QThread` so that QProcess-backed
+    backends never block the GUI event loop.
+    """
+
+    tile_ready = Signal(object, object)   # (tile_key, TilePayload)
+    tile_error = Signal(object, str)      # (tile_key, error_message)
 
     def __init__(self, tile_backend: TileBackend) -> None:
         super().__init__()
-        self._tile_backend = tile_backend
-        self._request_queue: deque[tuple[int, int, int]] = deque()
-        self._busy = False
+        self._backend = tile_backend
 
-    @Slot(int, int, int)
-    def request_tile(self, z: int, x: int, y: int) -> None:
-        """Queue tile requests so the helper protocol is never re-entered."""
+    def process_tile(self, tile_key: tuple[int, int, int]) -> None:
+        """Load a single tile (runs in the worker thread)."""
 
-        self._request_queue.append((z, x, y))
-        if self._busy:
-            return
-
-        self._busy = True
-        self._drain_queue()
-
-    @Slot()
-    def _drain_queue(self) -> None:
-        if not self._request_queue:
-            self._busy = False
-            return
-
-        z, x, y = self._request_queue.popleft()
-
+        z, x, y = tile_key
         try:
-            tile = self._tile_backend.load_tile(z, x, y)
+            tile = self._backend.load_tile(z, x, y)
         except TileLoadingError as exc:
-            logging.getLogger(__name__).warning(
-                "Tile %s/%s/%s could not be loaded: %s",
-                z,
-                x,
-                y,
-                exc,
-            )
-            self.tile_missing.emit(z, x, y)
+            self.tile_error.emit(tile_key, str(exc))
         else:
             if tile is None:
-                self.tile_missing.emit(z, x, y)
+                self.tile_error.emit(tile_key, "")
             else:
-                self.tile_loaded.emit(z, x, y, tile)
-
-        QTimer.singleShot(0, self._drain_queue)
+                self.tile_ready.emit(tile_key, tile)
 
 
 class TileManager(QObject):
-    """Manage tile loading, caching, and worker thread lifecycle."""
+    """Manage tile loading, caching, and async request scheduling.
+
+    Tile loading is performed in a dedicated :class:`QThread` so that the
+    GUI event loop is never blocked by ``QProcess.waitFor*`` calls in
+    ``OsmAndRasterBackend``.  Requests are dispatched one at a time; the
+    next request is sent only after the previous result arrives, avoiding
+    request-queue pile-ups when the user pans away.
+    """
 
     tile_loaded = Signal(tuple)
     tile_missing = Signal(tuple)
     tile_removed = Signal(tuple)
     tiles_changed = Signal()
-
-    _request_tile = Signal(int, int, int)
+    _dispatch_tile = Signal(object)  # internal: GUI thread → worker thread
+    _MISSING_RETRY_COOLDOWN_S = 1.5
 
     def __init__(
         self,
@@ -88,32 +76,44 @@ class TileManager(QObject):
 
         self._tile_cache: OrderedDict[tuple[int, int, int], TilePayload] = OrderedDict()
         self._pending_tiles: set[tuple[int, int, int]] = set()
-        self._missing_tiles: set[tuple[int, int, int]] = set()
+        self._missing_tiles: dict[tuple[int, int, int], float] = {}
         self._metadata = self._tile_backend.probe()
 
-        self._loader_thread: QThread | None = QThread(self)
-        self._tile_worker = _TileWorker(self._tile_backend)
-        self._tile_worker.moveToThread(self._loader_thread)
-        self._tile_worker.tile_loaded.connect(self._handle_tile_loaded)
-        self._tile_worker.tile_missing.connect(self._handle_tile_missing)
-        self._request_tile.connect(self._tile_worker.request_tile)
-        self._loader_thread.finished.connect(self._tile_worker.deleteLater)
-        self._loader_thread.start()
+        self._request_queue: deque[tuple[int, int, int]] = deque()
+        self._processing_queue = False
+        self._is_shutdown = False
+
+        # --- worker thread setup -------------------------------------------
+        self._worker_thread = QThread()
+        self._worker_thread.setObjectName("TileLoaderThread")
+        self._worker = _TileLoaderWorker(tile_backend)
+        self._worker.moveToThread(self._worker_thread)
+
+        self._dispatch_tile.connect(self._worker.process_tile)
+        self._worker.tile_ready.connect(self._on_worker_tile_ready)
+        self._worker.tile_error.connect(self._on_worker_tile_error)
+
+        # Shut down the helper process created by probe() so that it is
+        # re-created inside the worker thread with correct QProcess affinity.
+        tile_backend.shutdown()
+
+        self._worker_thread.start()
 
     # ------------------------------------------------------------------
     def shutdown(self) -> None:
-        """Stop the background worker thread and release resources."""
+        """Stop background work and release resources."""
+
+        self._is_shutdown = True
+        self._request_queue.clear()
+        self._processing_queue = False
+
+        # Ask the worker event loop to exit.
+        self._worker_thread.quit()
+        if not self._worker_thread.wait(5000):
+            self._worker_thread.terminate()
+            self._worker_thread.wait(1000)
 
         self._tile_backend.shutdown()
-
-        if self._loader_thread is None:
-            return
-
-        if self._loader_thread.isRunning():
-            self._loader_thread.quit()
-            self._loader_thread.wait()
-
-        self._loader_thread = None
 
     # ------------------------------------------------------------------
     def get_tile(self, tile_key: tuple[int, int, int]) -> TilePayload | None:
@@ -128,17 +128,98 @@ class TileManager(QObject):
     def ensure_tile(self, tile_key: tuple[int, int, int]) -> None:
         """Schedule ``tile_key`` for loading when it is not cached."""
 
-        if tile_key in self._missing_tiles or tile_key in self._pending_tiles:
+        if self._is_shutdown:
             return
 
+        if tile_key in self._pending_tiles:
+            return
+
+        failed_at = self._missing_tiles.get(tile_key)
+        if failed_at is not None:
+            if (time.monotonic() - failed_at) < self._MISSING_RETRY_COOLDOWN_S:
+                return
+            # Retry after cooldown; treat this as a fresh request.
+            self._missing_tiles.pop(tile_key, None)
+
         self._pending_tiles.add(tile_key)
-        self._request_tile.emit(*tile_key)
+        self._request_queue.append(tile_key)
+        self._schedule_queue_processing()
+
+    # ------------------------------------------------------------------
+    def _schedule_queue_processing(self) -> None:
+        """Schedule async processing of the tile request queue."""
+
+        if self._processing_queue:
+            return
+
+        self._processing_queue = True
+        QTimer.singleShot(0, self._process_queue)
+
+    # ------------------------------------------------------------------
+    def _process_queue(self) -> None:
+        """Dispatch one queued tile to the worker thread.
+
+        Only one tile is in-flight at a time; the next tile is dispatched
+        when the worker reports a result via :meth:`_on_worker_tile_ready`
+        or :meth:`_on_worker_tile_error`.
+        """
+
+        if self._is_shutdown:
+            self._processing_queue = False
+            return
+
+        if not self._request_queue:
+            self._processing_queue = False
+            return
+
+        tile_key = self._request_queue.popleft()
+        # Non-blocking: the signal is queued into the worker thread.
+        self._dispatch_tile.emit(tile_key)
+        # Do NOT schedule the next tile here; wait for the worker callback.
+
+    # ------------------------------------------------------------------
+    # Worker-thread result handlers (run in the GUI thread via queued
+    # signal connection).
+    # ------------------------------------------------------------------
+    def _on_worker_tile_ready(
+        self, tile_key: tuple[int, int, int], tile: TilePayload
+    ) -> None:
+        if self._is_shutdown:
+            return
+        z, x, y = tile_key
+        self._handle_tile_loaded(z, x, y, tile)
+        self._continue_queue()
+
+    def _on_worker_tile_error(
+        self, tile_key: tuple[int, int, int], error_msg: str
+    ) -> None:
+        if self._is_shutdown:
+            return
+        z, x, y = tile_key
+        if error_msg:
+            LOGGER.warning("Tile %s/%s/%s could not be loaded: %s", z, x, y, error_msg)
+        self._handle_tile_missing(z, x, y)
+        self._continue_queue()
+
+    def _continue_queue(self) -> None:
+        """Schedule processing of the next queued tile after a result."""
+
+        if self._request_queue:
+            QTimer.singleShot(0, self._process_queue)
+        else:
+            self._processing_queue = False
 
     # ------------------------------------------------------------------
     def is_tile_missing(self, tile_key: tuple[int, int, int]) -> bool:
         """Return ``True`` when ``tile_key`` previously failed to load."""
 
-        return tile_key in self._missing_tiles
+        failed_at = self._missing_tiles.get(tile_key)
+        if failed_at is None:
+            return False
+        if (time.monotonic() - failed_at) < self._MISSING_RETRY_COOLDOWN_S:
+            return True
+        self._missing_tiles.pop(tile_key, None)
+        return False
 
     # ------------------------------------------------------------------
     def pending_tiles(self) -> Iterable[tuple[int, int, int]]:
@@ -168,6 +249,8 @@ class TileManager(QObject):
         self._tile_cache.clear()
         self._pending_tiles.clear()
         self._missing_tiles.clear()
+        self._request_queue.clear()
+        self._processing_queue = False
         self.tiles_changed.emit()
 
     # ------------------------------------------------------------------
@@ -176,7 +259,7 @@ class TileManager(QObject):
 
         key = (z, x, y)
         self._pending_tiles.discard(key)
-        self._missing_tiles.discard(key)
+        self._missing_tiles.pop(key, None)
         self._tile_cache[key] = tile
         self._tile_cache.move_to_end(key)
         self.tile_loaded.emit(key)
@@ -193,7 +276,7 @@ class TileManager(QObject):
 
         key = (z, x, y)
         self._pending_tiles.discard(key)
-        self._missing_tiles.add(key)
+        self._missing_tiles[key] = time.monotonic()
         if key in self._tile_cache:
             del self._tile_cache[key]
             self.tile_removed.emit(key)

@@ -1,14 +1,15 @@
 # PySide6-OsmAnd-SDK Build Guide
 
-This repository supports three practical workflows on Windows:
+This repository supports multiple practical workflows:
 
-1. build the local MinGW helper directly from `tools/osmand_render_helper_native`
-2. build through the official OsmAnd MinGW build tree
-3. build the native widget through the official OsmAnd MSVC build tree
+- **Windows**: MinGW and MSVC build chains
+- **Linux**: GCC and Clang build chains using CMake
 
 Maintainer: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
 
 ## Prerequisites
+
+### Windows
 
 - Python 3.12+
 - PySide6 installed in the active environment
@@ -23,6 +24,61 @@ Maintainer: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
 
 The default script parameters assume the same tool locations used by the original workspace.
 
+### Linux
+
+- Python 3.12+
+- PySide6 installed in the active environment
+- CMake 3.20+
+- Git
+- C++ compiler (GCC 11+ or Clang 14+)
+- Qt6 development libraries
+
+#### Ubuntu/Debian
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    qt6-base-dev \
+    libqt6opengl6-dev \
+    libqt6gui6 \
+    libqt6core6 \
+    qt6-qpa-plugins
+```
+
+#### Fedora/RHEL/CentOS
+
+```bash
+sudo dnf install -y \
+    gcc \
+    g++ \
+    cmake \
+    git \
+    qt6-qtbase-devel \
+    qt6-qtbase-gui \
+    qt6-qtdeclarative-devel
+```
+
+#### Arch Linux
+
+```bash
+sudo pacman -S base-devel cmake git qt6-base
+```
+
+#### Alpine Linux
+
+```bash
+apk add --no-cache \
+    build-base \
+    cmake \
+    git \
+    qt6-qtbase-dev \
+    qt6-qtbase \
+    musl-dev
+```
+
 ## 1. Local MinGW Helper Build
 
 This is the shortest path if you only need the helper EXE and optional native widget DLL under `tools/osmand_render_helper_native/dist`.
@@ -36,7 +92,130 @@ Outputs:
 - `tools/osmand_render_helper_native\dist\osmand_render_helper.exe`
 - `tools/osmand_render_helper_native\dist\osmand_native_widget.dll` or `libosmand_native_widget.dll`
 
-## 2. Official OsmAnd MinGW Chain
+## 2. Linux CMake Build
+
+On Linux, build the helper using the provided CMake-based build script:
+
+```bash
+bash tools/osmand_render_helper_native/build_linux.sh
+```
+
+The script automatically:
+- Detects Qt6 from PySide6, system installation, or common paths
+- Checks for required build tools (CMake, GCC/Clang)
+- Validates vendored OsmAnd source availability
+- Configures and builds the helper executable and native widget library
+
+Outputs:
+
+- `tools/osmand_render_helper_native/dist-linux/osmand_render_helper` (executable)
+- `tools/osmand_render_helper_native/dist-linux/osmand_native_widget.so` or `libosmand_native_widget.so` (shared library)
+
+### Qt6 Detection on Linux
+
+The build script automatically searches for Qt6 in this order:
+
+1. **PySide6 embedded Qt**: If PySide6 is installed in a virtual environment, it uses the bundled Qt
+   ```bash
+   $VIRTUAL_ENV/lib/python3.12/site-packages/PySide6/Qt
+   ```
+
+2. **System qmake6**: If `qmake6` is available in PATH
+   ```bash
+   qmake6 -query QT_INSTALL_PREFIX
+   ```
+
+3. **System qmake with Qt6 check**: If `qmake` is available and reports Qt 6.x
+   ```bash
+   qmake -query QT_INSTALL_PREFIX
+   ```
+
+4. **Common installation paths**:
+   - `/usr/lib/cmake/Qt6`
+   - `/usr/local/Qt-6/lib/cmake/Qt6`
+   - `/opt/Qt6/lib/cmake/Qt6`
+   - `~/Qt/6.*/gcc_64/lib/cmake/Qt6`
+
+If automatic detection fails, explicitly set the Qt root:
+
+```bash
+export QT_ROOT=/path/to/qt6
+bash tools/osmand_render_helper_native/build_linux.sh
+```
+
+### Custom Build Configuration on Linux
+
+Control the build process with environment variables:
+
+```bash
+# Use Debug build instead of Release
+export BUILD_TYPE=Debug
+
+# Use fewer parallel jobs if you have limited memory
+export JOBS=4
+
+# Use Ninja instead of Unix Makefiles (if installed)
+export CMAKE_GENERATOR="Ninja"
+
+# Specify Qt root explicitly
+export QT_ROOT=/usr/lib/x86_64-linux-gnu/cmake/Qt6
+
+bash tools/osmand_render_helper_native/build_linux.sh
+```
+
+### Troubleshooting Linux Builds
+
+**"Could not find Qt6 installation"**
+
+Install Qt6 development libraries:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install qt6-base-dev libqt6opengl6-dev
+
+# Or build with explicit Qt path
+export QT_ROOT=/path/to/qt6
+bash tools/osmand_render_helper_native/build_linux.sh
+```
+
+**"Neither g++ nor clang++ found"**
+
+Install a C++ compiler:
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install build-essential
+
+# Fedora
+sudo dnf install gcc-c++
+
+# Arch
+sudo pacman -S base-devel
+```
+
+**"CMake not found"**
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install cmake
+
+# Fedora
+sudo dnf install cmake
+
+# Arch
+sudo pacman -S cmake
+```
+
+**Build output permissions or missing `.so` files**
+
+Ensure proper permissions and that the build completed:
+
+```bash
+ls -la tools/osmand_render_helper_native/dist-linux/
+chmod +x tools/osmand_render_helper_native/dist-linux/osmand_render_helper
+```
+
+## 3. Official OsmAnd MinGW Chain
 
 This script stages a local workspace under `build\official-workspace`, creates the required junction layout, and runs the official OsmAnd MinGW build flow against the vendored sources in this repository.
 
@@ -49,7 +228,7 @@ Outputs:
 - `build\official-workspace\binaries\windows\gcc-amd64\Release\osmand_render_helper.exe`
 - mirrored runtime files under `tools\osmand_render_helper_native\dist`
 
-## 3. Official OsmAnd MSVC Chain
+## 4. Official OsmAnd MSVC Chain
 
 This script stages the same local workspace and builds the native widget with the official MSVC-oriented OsmAnd flow.
 
@@ -82,19 +261,36 @@ Useful flags:
 
 ## Data Paths
 
-Default runtime paths:
+### Windows Default Runtime Paths
 
 - OBF data: `src/maps/tiles/World_basemap_2.obf`
 - OsmAnd resources: `vendor/osmand/resources`
-- helper EXE: `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`
-- native widget DLL: `tools/osmand_render_helper_native/dist-msvc/osmand_native_widget.dll` or MinGW `dist`
+- helper EXE (MinGW): `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`
+- native widget DLL (MSVC): `tools/osmand_render_helper_native/dist-msvc/osmand_native_widget.dll`
+
+### Linux Default Runtime Paths
+
+- OBF data: `src/maps/tiles/World_basemap_2.obf`
+- OsmAnd resources: `vendor/osmand/resources`
+- helper executable: `tools/osmand_render_helper_native/dist-linux/osmand_render_helper`
+- native widget library: `tools/osmand_render_helper_native/dist-linux/osmand_native_widget.so` or `dist-linux/libosmand_native_widget.so`
 
 The bundled `World_basemap_2.obf` file is only a default demo dataset. You can replace it with another OsmAnd `.obf` file, select a different file from the preview window, or point the runtime to a custom path through the environment variables below. Additional `.obf` downloads are available from the official OsmAnd download list: [https://download.osmand.net/list.php](https://download.osmand.net/list.php).
 
-Override environment variables if needed:
+Override environment variables if needed (cross-platform):
 
 - `IPHOTO_OSMAND_OBF_PATH`
 - `IPHOTO_OSMAND_RESOURCES_ROOT`
 - `IPHOTO_OSMAND_STYLE_PATH`
 - `IPHOTO_OSMAND_RENDER_HELPER`
 - `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY`
+
+**Linux example**:
+
+```bash
+export IPHOTO_OSMAND_OBF_PATH="/home/user/maps/france.obf"
+export IPHOTO_OSMAND_RESOURCES_ROOT="/home/user/osmand-resources"
+export IPHOTO_OSMAND_RENDER_HELPER="/home/user/osmand_render_helper"
+osmand-preview --backend python
+```
+
