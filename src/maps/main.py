@@ -91,7 +91,14 @@ class SearchWorker(QObject):
             self._pending_request = None
             self._wake_event.set()
         self._service.abort()
-        self._thread.join(timeout=2.0)
+        self._thread.join(timeout=5.0)
+        if self._thread.is_alive():
+            print(
+                "[maps.main] SearchWorker: worker thread did not stop within timeout;"
+                " skipping service shutdown to avoid use-after-close",
+                flush=True,
+            )
+            return
         self._service.shutdown()
 
     def _run(self) -> None:

@@ -229,7 +229,16 @@ OSMAND_EXPORT int osmand_search_query(
         return 0;
     }
 
-    writeErrorMessage(payload, outputBuffer, outputBufferCapacity);
+    const auto payloadWStr = payload.toStdWString();
+    if (static_cast<int>(payloadWStr.size()) >= outputBufferCapacity)
+    {
+        writeErrorMessage(
+            QStringLiteral("search result payload exceeds output buffer capacity"),
+            errorBuffer,
+            errorBufferCapacity);
+        return 0;
+    }
+    std::wmemcpy(outputBuffer, payloadWStr.c_str(), payloadWStr.size() + 1);
     return 1;
 }
 }
