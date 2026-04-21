@@ -24,6 +24,7 @@ from maps.errors import TileLoadingError
 
 MERCATOR_LAT_BOUND = 85.05112878
 _NATIVE_DLL_DIR_HANDLES: list[Any] = []
+_PRELOADED_QT_LIBRARIES: list[ctypes.CDLL] = []
 _NATIVE_WIDGET_RUNTIME_PROBE: dict[Path, tuple[bool, str | None]] = {}
 
 
@@ -75,14 +76,31 @@ def _load_bridge(library_path: Path) -> _BridgeAPI:
     # transitive .so/.dylib dependencies shipped alongside the widget.
     if os.name != "nt":
         import sys
-        lib_dir = str(library_path.parent.resolve())
-        ld_path = os.environ.get("LD_LIBRARY_PATH", "")
-        if lib_dir not in ld_path.split(os.pathsep):
-            os.environ["LD_LIBRARY_PATH"] = lib_dir + (os.pathsep + ld_path if ld_path else "")
+        qt_lib_dir = (Path(PySide6.__file__).resolve().parent / "Qt" / "lib").resolve()
+        for candidate_dir in [qt_lib_dir, library_path.parent.resolve()]:
+            lib_dir = str(candidate_dir)
+            ld_path = os.environ.get("LD_LIBRARY_PATH", "")
+            if lib_dir not in ld_path.split(os.pathsep):
+                os.environ["LD_LIBRARY_PATH"] = lib_dir + (os.pathsep + ld_path if ld_path else "")
         if sys.platform == "darwin":
-            dy_path = os.environ.get("DYLD_LIBRARY_PATH", "")
-            if lib_dir not in dy_path.split(os.pathsep):
-                os.environ["DYLD_LIBRARY_PATH"] = lib_dir + (os.pathsep + dy_path if dy_path else "")
+            for candidate_dir in [qt_lib_dir, library_path.parent.resolve()]:
+                lib_dir = str(candidate_dir)
+                dy_path = os.environ.get("DYLD_LIBRARY_PATH", "")
+                if lib_dir not in dy_path.split(os.pathsep):
+                    os.environ["DYLD_LIBRARY_PATH"] = lib_dir + (os.pathsep + dy_path if dy_path else "")
+        elif sys.platform.startswith("linux") and qt_lib_dir.is_dir():
+            preload_mode = getattr(ctypes, "RTLD_GLOBAL", 0)
+            for library_name in [
+                "libQt6Core.so.6",
+                "libQt6Gui.so.6",
+                "libQt6Widgets.so.6",
+                "libQt6Network.so.6",
+                "libQt6OpenGL.so.6",
+                "libQt6OpenGLWidgets.so.6",
+            ]:
+                candidate = qt_lib_dir / library_name
+                if candidate.exists():
+                    _PRELOADED_QT_LIBRARIES.append(ctypes.CDLL(str(candidate), mode=preload_mode))
 
     library = ctypes.CDLL(str(library_path))
     library.osmand_create_map_widget.argtypes = [
