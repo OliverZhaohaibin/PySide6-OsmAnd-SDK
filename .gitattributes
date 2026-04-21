@@ -1,1 +1,2 @@
 src/maps/tiles/World_basemap_2.obf filter=lfs diff=lfs merge=lfs -text
+plugin/data/geonames.sqlite3 filter=lfs diff=lfs merge=lfs -text

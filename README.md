@@ -48,7 +48,7 @@ OsmAnd `.obf` files are offline binary map packages. They store the map data con
 
 The bundled `.obf` file is only a default demo dataset. You can replace it with another OsmAnd `.obf` file, select a different file from the preview window, or point the runtime to a custom path through the documented environment variables. Additional `.obf` downloads are available from the official OsmAnd download list: [https://download.osmand.net/list.php](https://download.osmand.net/list.php).
 
-The preview search demo relies on address and POI indexes inside the active `.obf`. The bundled `World_basemap_2.obf` is useful for rendering and basic smoke tests, but reliable place-name search such as `北京` / `Beijing` requires a detailed regional or country `.obf` extract.
+When a local `plugin/data/geonames.sqlite3` GeoNames index is present, the preview search demo prefers it for place-name lookup and uses the active `.obf` search path as a fallback. The optimized database is compatible with the `GeoNames-search` project output, uses the compact `cities500`-based schema, and keeps global place-name queries such as `北京` / `Beijing` responsive without scanning the full database in Python.
 
 ### `styles` Files
 

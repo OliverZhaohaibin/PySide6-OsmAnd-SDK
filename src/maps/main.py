@@ -671,7 +671,7 @@ class MainWindow(QMainWindow):
             worker = SearchWorker(OsmAndSearchService(map_source))
         except Exception as exc:
             self._search_input.setEnabled(False)
-            self._search_input.setPlaceholderText("Search unavailable until the native OsmAnd library is rebuilt")
+            self._search_input.setPlaceholderText("Search unavailable")
             self.statusBar().showMessage(f"Search unavailable: {exc}", 8000)
             return
 
