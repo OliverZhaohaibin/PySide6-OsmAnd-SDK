@@ -169,8 +169,26 @@ def has_usable_osmand_native_widget(package_root: Path | None = None) -> bool:
 def _has_osmand_data_assets(source: MapSourceSpec) -> bool:
     return (
         Path(source.data_path).exists()
+        and not is_git_lfs_pointer(Path(source.data_path))
         and Path(source.resources_root or "").exists()
         and Path(source.style_path or "").exists()
+    )
+
+
+def is_git_lfs_pointer(path: Path) -> bool:
+    """Return ``True`` when *path* is a Git LFS pointer instead of real data."""
+
+    try:
+        if path.stat().st_size > 1024:
+            return False
+        header = path.read_bytes()
+    except OSError:
+        return False
+
+    return (
+        header.startswith(b"version https://git-lfs.github.com/spec/")
+        and b"\noid sha256:" in header
+        and b"\nsize " in header
     )
 
 
@@ -221,6 +239,7 @@ __all__ = [
     "MapSourceSpec",
     "has_usable_osmand_default",
     "has_usable_osmand_native_widget",
+    "is_git_lfs_pointer",
     "resolve_osmand_helper_command",
     "resolve_osmand_native_widget_library",
 ]

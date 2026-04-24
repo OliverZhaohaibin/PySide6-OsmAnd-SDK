@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QVBoxLayout, QWidget
 from maps.map_sources import (
     MapBackendMetadata,
     MapSourceSpec,
+    is_git_lfs_pointer,
     resolve_osmand_native_widget_library,
 )
 from maps.map_widget.map_renderer import CityAnnotation
@@ -197,6 +198,11 @@ class NativeOsmAndWidget(QWidget):
 
         package_root = Path(__file__).resolve().parent.parent
         self._map_source = map_source.resolved(package_root)
+        if is_git_lfs_pointer(Path(self._map_source.data_path)):
+            raise TileLoadingError(
+                f"OBF file '{self._map_source.data_path}' is a Git LFS pointer. "
+                "Run 'git lfs pull' to download the real map data."
+            )
         library_path = resolve_osmand_native_widget_library(package_root)
         if library_path is None:
             raise TileLoadingError("The native OsmAnd widget library is not available")

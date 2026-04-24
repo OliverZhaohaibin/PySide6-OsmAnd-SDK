@@ -16,7 +16,7 @@ from PySide6.QtCore import QProcess, QProcessEnvironment, QStandardPaths
 from PySide6.QtGui import QImage
 
 from maps.errors import TileAccessError, TileLoadingError
-from maps.map_sources import MapBackendMetadata, MapSourceSpec
+from maps.map_sources import MapBackendMetadata, MapSourceSpec, is_git_lfs_pointer
 
 LOGGER = logging.getLogger(__name__)
 
@@ -246,6 +246,10 @@ class OsmAndRasterBackend:
         data_path = Path(self._source.data_path)
         if not data_path.exists():
             raise TileAccessError(f"OBF file '{data_path}' does not exist")
+        if is_git_lfs_pointer(data_path):
+            raise TileAccessError(
+                f"OBF file '{data_path}' is a Git LFS pointer. Run 'git lfs pull' to download the real map data."
+            )
         resources_root = Path(self._source.resources_root or "")
         if not resources_root.exists():
             raise TileAccessError(f"OsmAnd resources directory '{resources_root}' does not exist")

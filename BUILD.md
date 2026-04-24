@@ -4,6 +4,7 @@ This repository supports multiple practical workflows:
 
 - **Windows**: MinGW and MSVC build chains
 - **Linux**: GCC and Clang build chains using CMake
+- **macOS**: AppleClang/CMake build chain using Qt6 from PySide6 or a Qt install
 
 Maintainer: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
 
@@ -32,6 +33,22 @@ The default script parameters assume the same tool locations used by the origina
 - Git
 - C++ compiler (GCC 11+ or Clang 14+)
 - Qt6 development libraries
+
+### macOS
+
+- macOS 12.1+
+- Python 3.12+
+- PySide6 installed in the active environment for Python runtime
+- A Qt6 SDK with CMake package files for native C++ compilation
+- CMake 3.24+
+- Xcode Command Line Tools
+
+```bash
+xcode-select --install
+brew install cmake
+brew install qt
+python -m pip install PySide6
+```
 
 #### Ubuntu/Debian
 
@@ -255,7 +272,60 @@ ls -la tools/osmand_render_helper_native/dist-linux/
 chmod +x tools/osmand_render_helper_native/dist-linux/osmand_render_helper
 ```
 
-## 3. Official OsmAnd MinGW Chain
+## 3. macOS CMake Build
+
+On macOS, build both the helper-backed Python renderer backend and the native Qt/OpenGL widget:
+
+```bash
+bash tools/osmand_render_helper_native/build_macos.sh
+```
+
+The script automatically:
+- Uses `PYTHON` when provided, otherwise prefers the repository `.venv`
+- Detects Qt6 from PySide6 when CMake development files are present, `qmake6`, Homebrew Qt, or Qt's installer layout
+- Uses the active PySide6 Qt runtime for final Mach-O load paths when PySide6 is installed, even if the compile-time Qt SDK comes from Homebrew or the Qt installer
+- Builds for the host architecture by default (`arm64` on Apple Silicon, `x86_64` on Intel)
+- Writes runtime RPATHs so Python can load the native widget dylib and the helper can find Qt
+
+Outputs:
+
+- `tools/osmand_render_helper_native/dist-macosx/osmand_render_helper` for the Python backend
+- `tools/osmand_render_helper_native/dist-macosx/osmand_native_widget.dylib` for native rendering
+
+Run the preview with the helper-backed Python backend:
+
+```bash
+python -m maps.main --backend python
+```
+
+Run the preview with native rendering:
+
+```bash
+python -m maps.main --backend native
+```
+
+Control the build with environment variables:
+
+```bash
+export BUILD_TYPE=Debug
+export JOBS=4
+export MACOS_ARCH=arm64        # or x86_64
+export MACOS_DEPLOYMENT_TARGET=12.1
+export QT_ROOT=/path/to/Qt/6.x/macos
+export QT_RUNTIME_LIB_DIR=/path/to/PySide6/Qt/lib
+export PYTHON=/path/to/python
+
+bash tools/osmand_render_helper_native/build_macos.sh
+```
+
+If you run the app from the source tree, no extra environment variable is needed once the files exist in `dist-macosx`. To use custom binary locations:
+
+```bash
+export IPHOTO_OSMAND_RENDER_HELPER=/path/to/osmand_render_helper
+export IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY=/path/to/osmand_native_widget.dylib
+```
+
+## 4. Official OsmAnd MinGW Chain
 
 This script stages a local workspace under `build\official-workspace`, creates the required junction layout, and runs the official OsmAnd MinGW build flow against the vendored sources in this repository.
 
@@ -333,4 +403,3 @@ export IPHOTO_OSMAND_RESOURCES_ROOT="/home/user/osmand-resources"
 export IPHOTO_OSMAND_RENDER_HELPER="/home/user/osmand_render_helper"
 osmand-preview --backend python
 ```
-

@@ -1,5 +1,21 @@
 cmake_minimum_required(VERSION 3.24)
 
+# Platform detection and defaults
+if(NOT DEFINED CMAKE_TARGET_OS)
+    if(CMAKE_HOST_UNIX AND NOT CMAKE_HOST_APPLE)
+        set(CMAKE_TARGET_OS "linux")
+    elseif(CMAKE_HOST_WIN32)
+        set(CMAKE_TARGET_OS "windows")
+    elseif(CMAKE_HOST_APPLE)
+        set(CMAKE_TARGET_OS "macosx")
+    endif()
+endif()
+
+if(CMAKE_TARGET_OS STREQUAL "macosx" AND (NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL ""))
+    unset(CMAKE_OSX_DEPLOYMENT_TARGET CACHE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.1" CACHE STRING "Minimum macOS deployment target")
+endif()
+
 project(osmand_render_helper_native LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -7,17 +23,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(OSMAND_VENDOR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/osmand" CACHE PATH "Directory that contains the copied OsmAnd 'core' and 'core-legacy' source trees")
-
-# Platform detection and defaults
-if(NOT DEFINED CMAKE_TARGET_OS)
-    if(UNIX AND NOT APPLE)
-        set(CMAKE_TARGET_OS "linux")
-    elseif(WIN32)
-        set(CMAKE_TARGET_OS "windows")
-    elseif(APPLE)
-        set(CMAKE_TARGET_OS "macosx")
-    endif()
-endif()
 
 # Set platform-specific defaults
 if(CMAKE_TARGET_OS STREQUAL "linux")
@@ -29,7 +34,7 @@ elseif(CMAKE_TARGET_OS STREQUAL "windows")
     set(MINGW_ROOT_DEFAULT "C:/Qt/Tools/mingw1310_64")
     set(DIST_DIR_DEFAULT "${CMAKE_CURRENT_SOURCE_DIR}/dist")
 elseif(CMAKE_TARGET_OS STREQUAL "macosx")
-    set(QT_ROOT_DEFAULT "/usr/local/Qt-6")
+    set(QT_ROOT_DEFAULT "$ENV{HOME}/Qt/6.10.1/macos")
     set(MINGW_ROOT_DEFAULT "")
     set(DIST_DIR_DEFAULT "${CMAKE_CURRENT_SOURCE_DIR}/dist-macosx")
 endif()
@@ -82,7 +87,48 @@ elseif(CMAKE_TARGET_OS STREQUAL "windows")
     set(CMAKE_STATIC_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build static libraries when supported")
     set(CMAKE_COMPILER_FAMILY "gcc" CACHE STRING "OsmAnd compiler family")
     set(ws2_32_LIBRARY ws2_32 CACHE STRING "Winsock library used by MinGW builds")
+elseif(CMAKE_TARGET_OS STREQUAL "macosx")
+    if(NOT DEFINED CMAKE_TARGET_CPU_ARCH)
+        if(CMAKE_OSX_ARCHITECTURES)
+            list(GET CMAKE_OSX_ARCHITECTURES 0 OSMAND_MACOS_ARCH)
+        elseif(CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+            set(OSMAND_MACOS_ARCH "arm64")
+        else()
+            set(OSMAND_MACOS_ARCH "x86_64")
+        endif()
+        set(CMAKE_TARGET_CPU_ARCH "${OSMAND_MACOS_ARCH}" CACHE STRING "OsmAnd CPU architecture")
+    endif()
+
+    if(CMAKE_TARGET_CPU_ARCH STREQUAL "arm64")
+        set(CMAKE_TARGET_CPU_ARCH_FAMILY "arm64" CACHE STRING "OsmAnd CPU architecture family")
+        set(CMAKE_TARGET_CPU_NAME "arm64" CACHE STRING "OsmAnd CPU name")
+    else()
+        set(CMAKE_TARGET_CPU_ARCH_FAMILY "x86" CACHE STRING "OsmAnd CPU architecture family")
+        set(CMAKE_TARGET_CPU_NAME "x86_64" CACHE STRING "OsmAnd CPU name")
+    endif()
+
+    set(CMAKE_SHARED_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build shared libraries when supported")
+    set(CMAKE_STATIC_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build static libraries when supported")
+    set(CMAKE_COMPILER_FAMILY "clang" CACHE STRING "OsmAnd compiler family")
+    if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
+        unset(CMAKE_OSX_ARCHITECTURES CACHE)
+        set(CMAKE_OSX_ARCHITECTURES "${CMAKE_TARGET_CPU_ARCH}" CACHE STRING "macOS architectures")
+    endif()
+    set(CMAKE_MACOSX_RPATH ON)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Compile with -fPIC" FORCE)
+    add_compile_definitions(GL_SILENCE_DEPRECATION)
 endif()
+
+string(REGEX REPLACE "[^A-Za-z0-9_]" "_" purified_CMAKE_TARGET_OS "${CMAKE_TARGET_OS}")
+string(REGEX REPLACE "[^A-Za-z0-9_]" "_" purified_CMAKE_TARGET_CPU_ARCH "${CMAKE_TARGET_CPU_ARCH}")
+string(REGEX REPLACE "[^A-Za-z0-9_]" "_" purified_CMAKE_TARGET_CPU_ARCH_FAMILY "${CMAKE_TARGET_CPU_ARCH_FAMILY}")
+string(REGEX REPLACE "[^A-Za-z0-9_]" "_" purified_CMAKE_COMPILER_FAMILY "${CMAKE_COMPILER_FAMILY}")
+add_compile_definitions(
+    OSMAND_TARGET_OS_${purified_CMAKE_TARGET_OS}
+    OSMAND_TARGET_CPU_ARCH_${purified_CMAKE_TARGET_CPU_ARCH}
+    OSMAND_TARGET_CPU_ARCH_FAMILY_${purified_CMAKE_TARGET_CPU_ARCH_FAMILY}
+    OSMAND_COMPILER_FAMILY_${purified_CMAKE_COMPILER_FAMILY}
+)
 
 # Include OsmAnd build utilities (required for prepare_upstream macro)
 include("${OSMAND_VENDOR_ROOT}/build/utils/common.cmake")
@@ -221,5 +267,18 @@ elseif(CMAKE_TARGET_OS STREQUAL "linux")
     set_target_properties(osmand_native_widget PROPERTIES
         BUILD_RPATH "$ORIGIN"
         INSTALL_RPATH "$ORIGIN"
+    )
+elseif(CMAKE_TARGET_OS STREQUAL "macosx")
+    set(_macos_rpath "@loader_path;@executable_path;${QT_ROOT}/lib")
+    set_target_properties(osmand_render_helper PROPERTIES
+        BUILD_WITH_INSTALL_RPATH ON
+        BUILD_RPATH "${_macos_rpath}"
+        INSTALL_RPATH "${_macos_rpath}"
+    )
+    set_target_properties(osmand_native_widget PROPERTIES
+        BUILD_WITH_INSTALL_RPATH ON
+        BUILD_RPATH "${_macos_rpath}"
+        INSTALL_RPATH "${_macos_rpath}"
+        INSTALL_NAME_DIR "@rpath"
     )
 endif()

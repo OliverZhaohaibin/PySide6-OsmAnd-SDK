@@ -34,20 +34,20 @@ There are currently two practical ways to use the SDK.
 
 ### 2.1 `NativeOsmAndWidget`
 
-This is the native C++ OsmAnd Qt map widget hosted inside PySide6 through a DLL bridge.
+This is the native C++ OsmAnd Qt map widget hosted inside PySide6 through a small shared-library bridge.
 
 Characteristics:
 
 - closest to the native OsmAnd widget path
 - requires OpenGL
-- available on Windows and Linux
-- depends on `osmand_native_widget.dll`
-- the DLL path is not part of `MapSourceSpec`; it is resolved from default repo paths or environment variables
+- available on Windows, Linux, and macOS
+- depends on the platform native widget library (`osmand_native_widget.dll`, `osmand_native_widget.so`, or `osmand_native_widget.dylib`)
+- the native widget library path is not part of `MapSourceSpec`; it is resolved from default repo paths or environment variables
 
 Use it when:
 
-- you want native OsmAnd-like behavior on Windows or Linux
-- you have already built the native widget DLL
+- you want native OsmAnd-like behavior on Windows, Linux, or macOS
+- you have already built the native widget library
 - you want behavior that stays close to the native OsmAnd widget integration
 
 ### 2.2 Python Widget + Helper Rendering
@@ -97,7 +97,18 @@ python -m pip install -e .
 
 Editable install is recommended because the current default path resolution is designed around this repository layout.
 
-### 4.2 Build at Least One Runtime
+### 4.2 Download Git LFS Map Data
+
+The bundled `src/maps/tiles/World_basemap_2.obf` demo map is stored with Git LFS. Pull it before launching the preview:
+
+```bash
+git lfs install
+git lfs pull
+```
+
+If the `.obf` file is only about 100 bytes and begins with `version https://git-lfs.github.com/spec/v1`, it is still a pointer file. The runtime detects this and asks you to run `git lfs pull`; without the real OBF data, the map view can initialize but has no map content to draw.
+
+### 4.3 Build at Least One Runtime
 
 #### Windows
 
@@ -136,7 +147,29 @@ bash tools/osmand_render_helper_native/build_linux.sh
 
 For full build details, see [BUILD.md](../BUILD.md).
 
-### 4.3 Launch the Preview
+#### macOS
+
+Build the helper and native widget library:
+
+```bash
+QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh
+```
+
+The script will:
+- Auto-detect Python from `PYTHON`, the repository `.venv`, or system Python
+- Detect Qt6 from `QT_ROOT`, PySide6 when CMake files are present, `qmake`, Homebrew, or Qt installer paths
+- Prefer the active PySide6 Qt runtime for final Mach-O load paths
+- Build the helper executable and native widget library
+- Output binaries to `tools/osmand_render_helper_native/dist-macosx/`
+
+If Qt6 detection fails, explicitly set it:
+
+```bash
+export QT_ROOT=/opt/homebrew/opt/qt
+JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh
+```
+
+### 4.4 Launch the Preview
 
 #### Windows
 
@@ -160,6 +193,18 @@ You can also run the entry point directly:
 
 ```bash
 python src/maps/main.py --backend auto
+```
+
+#### macOS
+
+```bash
+osmand-preview --backend auto
+```
+
+You can also run the entry point directly:
+
+```bash
+python -m maps.main --backend auto
 ```
 
 If you plan to use the native widget on Linux and hit XCB/GLX startup issues later, force Qt onto the desktop OpenGL path before creating `QApplication`. The preview entry point already does this kind of setup, but the same guard is useful in your own application entry point:
@@ -205,9 +250,9 @@ Useful arguments:
 - `--backend auto`
   Auto-selects the startup renderer. The preview prefers the native widget when available, then falls back to the Python path.
 - `--backend native`
-  Forces the native widget (Windows only).
+  Forces the native widget.
 - `--backend python`
-  Forces the Python + helper path (recommended for Linux).
+  Forces the Python + helper path.
 - `--center <lon> <lat>`
   Sets the initial center point. The argument order is longitude, latitude.
 - `--zoom <value>`
@@ -227,7 +272,13 @@ Example (Linux):
 osmand-preview --backend python --center 2.3522 48.8566 --zoom 8 --screenshot ~/paris.png
 ```
 
-### 4.4 Basic Preview Interactions
+Example (macOS):
+
+```bash
+python -m maps.main --backend native --center 2.3522 48.8566 --zoom 8 --screenshot ~/paris.png
+```
+
+### 4.5 Basic Preview Interactions
 
 The preview window already exposes enough interaction to validate the runtime:
 
@@ -278,7 +329,7 @@ This relies on the default runtime paths:
 
 - `.obf`: `src/maps/tiles/World_basemap_2.obf`
 - resources: `vendor/osmand/resources`
-- helper: `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`
+- helper: Windows uses `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`; Linux uses `tools/osmand_render_helper_native/dist-linux/osmand_render_helper`; macOS uses `tools/osmand_render_helper_native/dist-macosx/osmand_render_helper`
 
 If those files are not present in the default layout, use `MapSourceSpec` explicitly.
 
@@ -366,6 +417,7 @@ It describes where the map runtime comes from. The main fields are:
   The helper executable command, usually a one-item tuple containing the absolute path to the helper executable.
   - **Windows**: `osmand_render_helper.exe`
   - **Linux**: `osmand_render_helper` (no extension)
+  - **macOS**: `osmand_render_helper` (no extension)
 
 ### 6.2 Explicit Runtime Configuration
 
@@ -426,6 +478,43 @@ source = MapSourceSpec(
     style_path=SDK_ROOT / "vendor" / "osmand" / "resources" / "rendering_styles" / "default.render.xml",
     helper_command=(
         str(SDK_ROOT / "tools" / "osmand_render_helper_native" / "dist-linux" / "osmand_render_helper"),
+    ),
+)
+
+app = QApplication([])
+window = QMainWindow()
+
+map_widget = MapGLWidget(map_source=source)
+map_widget.center_on(116.4074, 39.9042)
+map_widget.set_zoom(9.0)
+
+window.setCentralWidget(map_widget)
+window.resize(1200, 800)
+window.show()
+
+app.exec()
+```
+
+#### macOS Example
+
+```python
+from pathlib import Path
+
+from PySide6.QtWidgets import QApplication, QMainWindow
+
+from maps.map_sources import MapSourceSpec
+from maps.map_widget import MapGLWidget
+
+
+SDK_ROOT = Path.home() / "PySide6-OsmAnd-SDK"
+
+source = MapSourceSpec(
+    kind="osmand_obf",
+    data_path=SDK_ROOT / "src" / "maps" / "tiles" / "World_basemap_2.obf",
+    resources_root=SDK_ROOT / "vendor" / "osmand" / "resources",
+    style_path=SDK_ROOT / "vendor" / "osmand" / "resources" / "rendering_styles" / "default.render.xml",
+    helper_command=(
+        str(SDK_ROOT / "tools" / "osmand_render_helper_native" / "dist-macosx" / "osmand_render_helper"),
     ),
 )
 
@@ -587,7 +676,7 @@ This pattern works well for:
 
 ## 9. Environment Variables and Runtime Overrides
 
-If the default repository layout is not the layout you want to use, the runtime can be overridden with environment variables. These work on both Windows and Linux.
+If the default repository layout is not the layout you want to use, the runtime can be overridden with environment variables. These work on Windows, Linux, and macOS.
 
 ### 9.1 Map Data and Rendering Resources
 
@@ -617,9 +706,19 @@ export IPHOTO_OSMAND_RENDER_HELPER="/home/user/osmand-sdk/tools/osmand_render_he
 osmand-preview --backend python
 ```
 
+macOS Bash example:
+
+```bash
+export IPHOTO_OSMAND_OBF_PATH="$HOME/maps/france_europe.obf"
+export IPHOTO_OSMAND_STYLE_PATH="$HOME/osmand-sdk/vendor/osmand/resources/rendering_styles/default.render.xml"
+export IPHOTO_OSMAND_RENDER_HELPER="$HOME/osmand-sdk/tools/osmand_render_helper_native/dist-macosx/osmand_render_helper"
+export IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY="$HOME/osmand-sdk/tools/osmand_render_helper_native/dist-macosx/osmand_native_widget.dylib"
+python -m maps.main --backend native
+```
+
 ### 9.2 Qt and MinGW Runtime Discovery
 
-The helper process also tries to extend `PATH` so it can find Qt and MinGW DLLs. This applies mainly to Windows; on Linux, system library search paths handle this.
+The helper process also tries to extend runtime library search paths so it can find Qt and platform dependencies. This mainly means `PATH` on Windows, `LD_LIBRARY_PATH` on Linux, and `DYLD_LIBRARY_PATH` plus Mach-O rpaths on macOS.
 
 #### Windows
 
@@ -646,6 +745,21 @@ osmand-preview --backend python
 
 Alternatively, link the Qt libraries where the helper expects them, or rebuild with the correct `-DCMAKE_PREFIX_PATH`.
 
+#### macOS
+
+The macOS build script writes rpaths into the helper and native widget so they can load Qt from the active PySide6 runtime or the Qt SDK used at build time. If you use a custom layout, set:
+
+| Environment Variable | Purpose |
+| --- | --- |
+| `QT_ROOT` | Qt SDK root used to build, for example `/opt/homebrew/opt/qt` |
+| `QT_RUNTIME_LIB_DIR` | Qt runtime framework directory used at load time, usually PySide6's `Qt/lib` |
+
+Then rebuild:
+
+```bash
+QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh
+```
+
 ## 10. Which Widget Should You Choose?
 
 ### 10.1 You Want the Fastest Practical Integration
@@ -658,8 +772,8 @@ Why:
 
 - paths and assets can be made explicit through `MapSourceSpec`
 - it is the most straightforward Python-facing integration
-- it avoids the extra DLL bridge complexity of the native widget
-- works on Linux and Windows
+- it avoids the extra shared-library bridge complexity of the native widget
+- works on Windows, Linux, and macOS
 
 ### 10.2 The Machine Does Not Have Usable OpenGL
 
@@ -681,8 +795,8 @@ Use:
 
 Requirements:
 
-- Windows or Linux
-- a built native widget library for your platform (`.dll` on Windows, `.so` on Linux)
+- Windows, Linux, or macOS
+- a built native widget library for your platform (`.dll` on Windows, `.so` on Linux, `.dylib` on macOS)
 - a runtime that can load that library successfully
 
 ## 11. Important Current Boundaries
@@ -690,7 +804,7 @@ Requirements:
 These are worth knowing before you build a larger app around the SDK:
 
 - the only publicly supported source kind right now is `osmand_obf`
-- the native widget is supported on Windows and Linux; Linux builds produce a `.so` and are production-ready
+- the native widget is supported on Windows, Linux, and macOS; Linux builds produce a `.so`, and macOS builds produce `osmand_native_widget.dylib`
 - `tile_root` and `style_path` in the `MapWidget` and `MapGLWidget` constructors are compatibility fields; real configuration should go through `MapSourceSpec`
 - `set_city_annotations()` and `city_at()` are currently compatibility-oriented methods, not a complete annotation system
 - there is no built-in high-level overlay API yet, so markers and business panels are best handled in your own Qt layer
@@ -701,7 +815,7 @@ One extra detail matters a lot for standalone deployment:
 
 - the Python helper path can be passed directly via `MapSourceSpec.helper_command`
 - the native widget library path is not part of `MapSourceSpec`; it is currently resolved through default repo locations or `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY`
-- **Linux users**: you can use either `MapGLWidget` with the helper or `NativeOsmAndWidget`; the helper-backed path remains the simplest default
+- **Linux/macOS users**: you can use either `MapGLWidget` with the helper or `NativeOsmAndWidget`; the helper-backed path remains the simplest default
 
 ## 12. Troubleshooting
 
@@ -714,12 +828,13 @@ Common symptoms:
 
 Check in this order:
 
-1. confirm that you built the helper (Windows: `build_helper.ps1`, Linux: `build_linux.sh`)
+1. confirm that you built the helper (Windows: `build_helper.ps1`, Linux: `build_linux.sh`, macOS: `build_macos.sh`)
 2. confirm that the helper executable exists:
    - Windows: `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`
    - Linux: `tools/osmand_render_helper_native/dist-linux/osmand_render_helper`
+   - macOS: `tools/osmand_render_helper_native/dist-macosx/osmand_render_helper`
 3. if the helper is somewhere else, set `IPHOTO_OSMAND_RENDER_HELPER`
-4. on Linux, ensure the binary is executable: `chmod +x tools/osmand_render_helper_native/dist-linux/osmand_render_helper`
+4. on Linux/macOS, ensure the binary is executable
 
 ### 12.2 `.obf`, Resources, or Style File Not Found
 
@@ -733,17 +848,25 @@ Check:
 
 Absolute paths are the safest option. On Linux, use forward slashes or `Path` objects.
 
-### 12.3 Native Widget DLL Missing or Failing to Load
+If the error says the `.obf` is a Git LFS pointer, install Git LFS and run:
 
-This applies to both Windows and Linux; native widget support on Linux is production-ready.
+```bash
+git lfs pull
+```
+
+The bundled `World_basemap_2.obf` should be hundreds of megabytes, not a tiny text file.
+
+### 12.3 Native Widget Library Missing or Failing to Load
+
+This applies to Windows, Linux, and macOS.
 
 Check:
 
-1. that you built the native widget for your platform (Windows: `build_native_widget_msvc.ps1`, Linux: `build_linux.sh`)
+1. that you built the native widget for your platform (Windows: `build_native_widget_msvc.ps1`, Linux: `build_linux.sh`, macOS: `build_macos.sh`)
 2. that `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` points to the correct library if you are overriding it
 3. that Qt, PySide6, and transitive dependencies are all discoverable for the platform you are using
 
-**Recommended for Linux**: use `NativeOsmAndWidget` when you want native behavior, or `MapGLWidget` with the helper for the simplest setup.
+Use `NativeOsmAndWidget` when you want native behavior, or `MapGLWidget` with the helper for the simplest setup.
 
 ### 12.4 The Helper Starts but Rendering Fails
 
@@ -759,6 +882,11 @@ Focus on:
 - the helper binary has execute permissions: `chmod +x tools/osmand_render_helper_native/dist-linux/osmand_render_helper`
 - check helper output for errors: run it directly to see detailed error messages
 - ensure all build prerequisites are installed (Qt6 dev libraries, GCC/Clang)
+
+**macOS:**
+- confirm the real Git LFS `.obf` data is present, not the pointer file
+- rebuild with `QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh`
+- if PySide6 and the build-time Qt SDK differ, let `build_macos.sh` rewrite the Qt load paths via `@rpath`
 
 ### 12.5 The Map Renders but the Style Is Not What You Want
 
@@ -813,7 +941,7 @@ If your application will depend on this SDK for a while, a stable setup usually 
 2. construct `MapSourceSpec` explicitly in your application
 3. use absolute paths for all runtime assets
 4. standardize on `MapGLWidget` first
-5. enable the native widget later only for Windows builds that really need it
+5. enable `NativeOsmAndWidget` after the helper-backed path is already working on your target platform
 
 ### Windows
 
@@ -893,6 +1021,38 @@ window.show()
 app.exec()
 ```
 
+### macOS
+
+```python
+from pathlib import Path
+
+from PySide6.QtWidgets import QApplication, QMainWindow
+
+from maps.map_sources import MapSourceSpec
+from maps.map_widget import MapGLWidget
+
+SDK_ROOT = Path.home() / "PySide6-OsmAnd-SDK"
+
+source = MapSourceSpec(
+    kind="osmand_obf",
+    data_path=SDK_ROOT / "src" / "maps" / "tiles" / "World_basemap_2.obf",
+    resources_root=SDK_ROOT / "vendor" / "osmand" / "resources",
+    style_path=SDK_ROOT / "vendor" / "osmand" / "resources" / "rendering_styles" / "default.render.xml",
+    helper_command=(str(SDK_ROOT / "tools" / "osmand_render_helper_native" / "dist-macosx" / "osmand_render_helper"),),
+)
+
+app = QApplication([])
+window = QMainWindow()
+window.setWindowTitle("My Map App")
+
+map_widget = MapGLWidget(map_source=source)
+window.setCentralWidget(map_widget)
+
+window.resize(1200, 800)
+window.show()
+app.exec()
+```
+
 ### Quick Proof of Concept
 
 If you just want the shortest path to a proof of concept:
@@ -907,4 +1067,10 @@ If you just want the shortest path to a proof of concept:
 2. run `bash tools/osmand_render_helper_native/build_linux.sh`
 3. drop `MapGLWidget()` into your `QMainWindow`
 
-That path is short, predictable, and easy to debug on both platforms.
+**macOS:**
+1. `git lfs pull`
+2. `python -m pip install -e .`
+3. run `QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh`
+4. drop `MapGLWidget()` into your `QMainWindow`
+
+That path is short, predictable, and easy to debug on all supported desktop platforms.

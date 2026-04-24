@@ -10,7 +10,7 @@ Author: [OliverZhaohaibin](https://github.com/OliverZhaohaibin)
 - makes the native C++ map widget usable from PySide6 applications
 - supports offline rendering based on OsmAnd `.obf` map data
 - includes both native OpenGL preview and Python-driven raster preview paths
-- provides build scripts for Windows (MinGW, MSVC) and Linux (GCC, Clang) toolchains
+- provides build scripts for Windows (MinGW, MSVC), Linux (GCC, Clang), and macOS (AppleClang) toolchains
 - bundles demo data and OsmAnd resources for local testing and integration work
 
 ## Demo Video
@@ -29,22 +29,31 @@ By moving the native stack forward to Qt6 and validating PySide6 compatibility, 
 - `vendor/osmand/core`: vendored OsmAnd core sources
 - `vendor/osmand/core-legacy`: vendored legacy core sources still required by the native build
 - `vendor/osmand/resources`: OsmAnd rendering resources, styles, and data files
-- `tools/osmand_render_helper_native`: native helper and widget sources plus MinGW and MSVC build scripts
+- `tools/osmand_render_helper_native`: native helper and widget sources plus Windows, Linux, and macOS build scripts
 - `src/maps`: PySide6 preview application and Python integration layer
 - `src/maps/main.py`: preview entry point
 
 ## Key Capabilities
 
-- native `osmand_native_widget.dll` hosting through PySide6
+- native OsmAnd widget hosting through PySide6 (`.dll`, `.so`, or `.dylib`)
 - helper-backed Python raster rendering for `.obf`
 - OpenGL and non-OpenGL preview widgets
-- bundled `World_basemap_2.obf` demo data for immediate testing
+- bundled `World_basemap_2.obf` demo data for local testing and integration work
 
 ## Map Data And Styles
 
 ### `.obf` Files
 
-OsmAnd `.obf` files are offline binary map packages. They store the map data consumed by the native engine, including vector features such as roads, boundaries, landuse, water, place labels, routing-related information, and points of interest. In this repository, the preview uses the bundled `src/maps/tiles/World_basemap_2.obf` file so the project can be run and demonstrated immediately.
+OsmAnd `.obf` files are offline binary map packages. They store the map data consumed by the native engine, including vector features such as roads, boundaries, landuse, water, place labels, routing-related information, and points of interest. In this repository, the preview uses the bundled `src/maps/tiles/World_basemap_2.obf` file after Git LFS has downloaded the real map data.
+
+The bundled `.obf` is stored with Git LFS. After cloning the repository, install Git LFS and pull the large files before running the preview:
+
+```bash
+git lfs install
+git lfs pull
+```
+
+If `World_basemap_2.obf` is only about 100 bytes and starts with `version https://git-lfs.github.com/spec/v1`, it is still a pointer file. The runtime detects this case and reports that `git lfs pull` is required instead of silently showing an empty map.
 
 The bundled `.obf` file is only a default demo dataset. You can replace it with another OsmAnd `.obf` file, select a different file from the preview window, or point the runtime to a custom path through the documented environment variables. Additional `.obf` downloads are available from the official OsmAnd download list: [https://download.osmand.net/list.php](https://download.osmand.net/list.php).
 
@@ -129,6 +138,36 @@ You can also run the entry point directly:
 python src/maps/main.py --backend auto
 ```
 
+### macOS
+
+1. Install system dependencies and Python dependencies:
+
+```bash
+brew install cmake qt git-lfs
+git lfs install
+git lfs pull
+python -m pip install -e .
+```
+
+2. Build the helper and native widget:
+
+```bash
+QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh
+```
+
+3. Launch the preview:
+
+```bash
+osmand-preview --backend auto
+```
+
+You can also run either backend explicitly:
+
+```bash
+python -m maps.main --backend python
+python -m maps.main --backend native
+```
+
 ## Documentation
 
 - [Python SDK Guide](docs/python-sdk-guide.md)
@@ -137,11 +176,13 @@ python src/maps/main.py --backend auto
 ## Runtime Notes
 
 - the preview defaults to the bundled `src/maps/tiles/World_basemap_2.obf` and the vendored resources under `vendor/osmand/resources`
+- the bundled `.obf` is a Git LFS file; run `git lfs pull` after cloning before expecting visible map content
 - the bundled `.obf` is replaceable, so you can test other OsmAnd map extracts downloaded from [download.osmand.net/list.php](https://download.osmand.net/list.php)
 - **Windows**: helper outputs in `tools/osmand_render_helper_native/dist` and `tools/osmand_render_helper_native/dist-msvc` are generated and ignored by Git
 - **Linux**: helper outputs in `tools/osmand_render_helper_native/dist-linux` are generated and ignored by Git
+- **macOS**: helper outputs in `tools/osmand_render_helper_native/dist-macosx` are generated and ignored by Git
 - when the native widget runtime is available, the preview can use the embedded OsmAnd widget; otherwise the Python rendering path remains available
-- on Linux, the native widget library is built as a `.so` file (shared object); the Python path remains the recommended approach for Linux deployments
+- on Linux, the native widget library is built as a `.so` file; on macOS it is built as `osmand_native_widget.dylib`
 - if you embed the native widget on Linux and hit XCB/GLX issues, see [BUILD.md](BUILD.md) and the [Python SDK Guide](docs/python-sdk-guide.md) for the entry-point Qt runtime flags to apply before `QApplication` starts
 
 ## License
