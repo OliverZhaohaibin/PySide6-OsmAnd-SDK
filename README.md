@@ -18,6 +18,12 @@
 
 ---
 
+## Demo Video
+
+[Demo Video](https://github.com/user-attachments/assets/d2352ee7-398d-4c90-bd96-d747a6b5e0bb)
+
+---
+
 ## 🚀 Quick Start
 
 ### 1. Clone and prepare Git LFS data
