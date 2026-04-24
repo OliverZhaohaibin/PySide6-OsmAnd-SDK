@@ -1,6 +1,18 @@
 cmake_minimum_required(VERSION 3.24)
 
-if(CMAKE_TARGET_OS STREQUAL "macosx" AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+# Platform detection and defaults
+if(NOT DEFINED CMAKE_TARGET_OS)
+    if(CMAKE_HOST_UNIX AND NOT CMAKE_HOST_APPLE)
+        set(CMAKE_TARGET_OS "linux")
+    elseif(CMAKE_HOST_WIN32)
+        set(CMAKE_TARGET_OS "windows")
+    elseif(CMAKE_HOST_APPLE)
+        set(CMAKE_TARGET_OS "macosx")
+    endif()
+endif()
+
+if(CMAKE_TARGET_OS STREQUAL "macosx" AND (NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET OR CMAKE_OSX_DEPLOYMENT_TARGET STREQUAL ""))
+    unset(CMAKE_OSX_DEPLOYMENT_TARGET CACHE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.1" CACHE STRING "Minimum macOS deployment target")
 endif()
 
@@ -11,17 +23,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(OSMAND_VENDOR_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../vendor/osmand" CACHE PATH "Directory that contains the copied OsmAnd 'core' and 'core-legacy' source trees")
-
-# Platform detection and defaults
-if(NOT DEFINED CMAKE_TARGET_OS)
-    if(UNIX AND NOT APPLE)
-        set(CMAKE_TARGET_OS "linux")
-    elseif(WIN32)
-        set(CMAKE_TARGET_OS "windows")
-    elseif(APPLE)
-        set(CMAKE_TARGET_OS "macosx")
-    endif()
-endif()
 
 # Set platform-specific defaults
 if(CMAKE_TARGET_OS STREQUAL "linux")
@@ -109,8 +110,10 @@ elseif(CMAKE_TARGET_OS STREQUAL "macosx")
     set(CMAKE_SHARED_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build shared libraries when supported")
     set(CMAKE_STATIC_LIBS_ALLOWED_ON_TARGET ON CACHE BOOL "Build static libraries when supported")
     set(CMAKE_COMPILER_FAMILY "clang" CACHE STRING "OsmAnd compiler family")
-    set(CMAKE_OSX_ARCHITECTURES "${CMAKE_TARGET_CPU_ARCH}" CACHE STRING "macOS architectures" FORCE)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.1" CACHE STRING "Minimum macOS deployment target")
+    if(NOT DEFINED CMAKE_OSX_ARCHITECTURES OR CMAKE_OSX_ARCHITECTURES STREQUAL "")
+        unset(CMAKE_OSX_ARCHITECTURES CACHE)
+        set(CMAKE_OSX_ARCHITECTURES "${CMAKE_TARGET_CPU_ARCH}" CACHE STRING "macOS architectures")
+    endif()
     set(CMAKE_MACOSX_RPATH ON)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL "Compile with -fPIC" FORCE)
     add_compile_definitions(GL_SILENCE_DEPRECATION)
