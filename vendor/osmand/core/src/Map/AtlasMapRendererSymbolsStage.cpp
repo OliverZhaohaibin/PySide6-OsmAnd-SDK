@@ -1408,7 +1408,10 @@ void OsmAnd::AtlasMapRendererSymbolsStage::obtainRenderablesFromBillboardSymbol(
             
             int intersectionCount = 0;
             std::array<Plane, 2> intersectedWithPlane = {Plane::None, Plane::None};
-            std::array<int, 2> intersectionSegments = {0, rasterMapSymbol->linePoints.size() - 1};
+            std::array<int, 2> intersectionSegments = {
+                0,
+                static_cast<int>(rasterMapSymbol->linePoints.size() - 1)
+            };
             std::array<PointI, 2> intersections = {
                 static_cast<PointI>(rasterMapSymbol->linePoints[intersectionSegments[0]] + shiftToCenter),
                 static_cast<PointI>(rasterMapSymbol->linePoints[intersectionSegments[1]] + shiftToCenter)
