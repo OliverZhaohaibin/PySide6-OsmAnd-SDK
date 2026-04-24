@@ -34,20 +34,20 @@
 
 ### 2.1 `NativeOsmAndWidget`
 
-这是原生 C++ 的 OsmAnd Qt 地图控件，通过 DLL 桥接到 PySide6。
+这是原生 C++ 的 OsmAnd Qt 地图控件，通过小型共享库桥接到 PySide6。
 
 特点：
 
 - 渲染逻辑更接近原生 OsmAnd 控件
 - 需要 OpenGL
-- 目前只支持 Windows
-- 依赖 `osmand_native_widget.dll`
-- DLL 路径不是 `MapSourceSpec` 的一部分，而是通过默认仓库路径或环境变量解析
+- 支持 Windows、Linux 和 macOS
+- 依赖当前平台的 native widget 库：Windows 为 `.dll`，Linux 为 `.so`，macOS 为 `.dylib`
+- native widget 库路径不是 `MapSourceSpec` 的一部分，而是通过默认仓库路径或环境变量解析
 
 适合：
 
-- 你明确在 Windows 上开发
-- 你已经构建好 native widget DLL
+- 你明确需要更接近原生 OsmAnd 的控件行为
+- 你已经为当前平台构建好 native widget 库
 - 你希望尽量接近原生 OsmAnd 运行方式
 
 ### 2.2 Python 控件 + helper 渲染
@@ -97,7 +97,18 @@ python -m pip install -e .
 
 推荐使用 `-e`，因为当前默认路径解析是围绕仓库目录结构设计的。
 
-### 4.2 至少构建一种运行时
+### 4.2 下载 Git LFS 地图数据
+
+仓库自带的 `src/maps/tiles/World_basemap_2.obf` 是 Git LFS 文件。启动预览前需要先拉取真实地图数据：
+
+```bash
+git lfs install
+git lfs pull
+```
+
+如果这个 `.obf` 只有约 100 字节，并且内容以 `version https://git-lfs.github.com/spec/v1` 开头，它仍然只是 LFS pointer。运行时现在会识别这种情况并提示执行 `git lfs pull`，否则地图控件可能初始化成功但没有真实地图内容可画。
+
+### 4.3 至少构建一种运行时
 
 如果你只是想先把 Python 地图跑起来，优先构建 helper：
 
@@ -113,7 +124,21 @@ powershell -ExecutionPolicy Bypass -File tools\osmand_render_helper_native\build
 
 更完整的构建说明见 [BUILD.md](../BUILD.md)。
 
-### 4.3 启动预览
+#### Linux
+
+```bash
+bash tools/osmand_render_helper_native/build_linux.sh
+```
+
+#### macOS
+
+```bash
+QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh
+```
+
+macOS 脚本会同时构建 Python helper 和 native widget，并把结果放到 `tools/osmand_render_helper_native/dist-macosx/`。
+
+### 4.4 启动预览
 
 ```powershell
 osmand-preview --backend auto
@@ -123,6 +148,12 @@ osmand-preview --backend auto
 
 ```powershell
 python src\maps\main.py --backend auto
+```
+
+macOS 上也可以直接用模块方式启动：
+
+```bash
+python -m maps.main --backend auto
 ```
 
 如果你在 Linux 上使用 native widget，并且后面遇到 XCB/GLX 启动问题，可以在创建 `QApplication` 之前强制 Qt 走桌面 OpenGL 路径。仓库自带的预览入口已经做了类似处理，但如果你在自己的应用入口里嵌入 native widget，建议加上同样的检查：
@@ -235,7 +266,7 @@ app.exec()
 
 - `.obf`: `src/maps/tiles/World_basemap_2.obf`
 - 资源目录: `vendor/osmand/resources`
-- helper: `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`
+- helper: Windows 使用 `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`；Linux 使用 `tools/osmand_render_helper_native/dist-linux/osmand_render_helper`；macOS 使用 `tools/osmand_render_helper_native/dist-macosx/osmand_render_helper`
 
 如果这些文件不在默认位置，请看后面的 `MapSourceSpec` 配置方式。
 
@@ -320,7 +351,7 @@ app.exec()
 - `style_path`
   渲染样式 XML
 - `helper_command`
-  helper 可执行文件命令，通常是 `("...\\osmand_render_helper.exe",)`
+  helper 可执行文件命令，通常是一个只包含 helper 绝对路径的 tuple；Windows 是 `.exe`，Linux/macOS 无扩展名
 
 ### 6.2 显式指定运行时资源
 
@@ -513,7 +544,7 @@ update_pin()
 | `IPHOTO_OSMAND_RESOURCES_ROOT` | 指定 `vendor/osmand/resources` 替代目录 |
 | `IPHOTO_OSMAND_STYLE_PATH` | 指定 style XML |
 | `IPHOTO_OSMAND_RENDER_HELPER` | 指定 helper 命令或可执行文件路径 |
-| `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` | 指定 native widget DLL 路径 |
+| `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` | 指定 native widget 库路径 |
 
 PowerShell 示例：
 
@@ -524,9 +555,21 @@ $env:IPHOTO_OSMAND_RENDER_HELPER = "D:\python_code\iPhoto\PySide6-OsmAnd-SDK\too
 osmand-preview --backend python
 ```
 
-### 9.2 Qt / MinGW 运行时
+Bash 示例：
 
-helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如果你的 Qt 安装位置和仓库默认值不同，可以设置：
+```bash
+export IPHOTO_OSMAND_OBF_PATH="$HOME/maps/france_europe.obf"
+export IPHOTO_OSMAND_STYLE_PATH="$HOME/osmand-sdk/vendor/osmand/resources/rendering_styles/default.render.xml"
+export IPHOTO_OSMAND_RENDER_HELPER="$HOME/osmand-sdk/tools/osmand_render_helper_native/dist-macosx/osmand_render_helper"
+export IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY="$HOME/osmand-sdk/tools/osmand_render_helper_native/dist-macosx/osmand_native_widget.dylib"
+python -m maps.main --backend native
+```
+
+### 9.2 Qt / MinGW / macOS 运行时
+
+helper 启动时还会尝试自动补齐 Qt 和平台依赖的搜索路径。Windows 主要依赖 `PATH`，Linux 主要依赖 `LD_LIBRARY_PATH`，macOS 则依赖 `DYLD_LIBRARY_PATH` 和 Mach-O rpath。
+
+Windows 下，如果你的 Qt 安装位置和仓库默认值不同，可以设置：
 
 | 环境变量 | 作用 |
 | --- | --- |
@@ -534,6 +577,19 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 | `IPHOTO_OSMAND_MINGW_ROOT` | MinGW 根目录，例如 `C:\Qt\Tools\mingw1310_64` |
 
 这两个变量主要用于解决 helper 能启动但找不到依赖 DLL 的问题。
+
+macOS 下，如果你使用自定义 Qt SDK 或 PySide6 运行时，可以设置：
+
+| 环境变量 | 作用 |
+| --- | --- |
+| `QT_ROOT` | 编译时 Qt SDK 根目录，例如 `/opt/homebrew/opt/qt` |
+| `QT_RUNTIME_LIB_DIR` | 运行时 Qt framework 目录，通常是 PySide6 的 `Qt/lib` |
+
+然后重新构建：
+
+```bash
+QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh
+```
 
 ## 10. 不同开发目标下，应该选哪个控件
 
@@ -547,7 +603,7 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 
 - 路径和资源都可以通过 `MapSourceSpec` 明确指定
 - 对 Python 应用更友好
-- 不要求你先处理 native widget 的 DLL 桥接问题
+- 不要求你先处理 native widget 的共享库桥接问题
 
 ### 10.2 机器没有可用 OpenGL
 
@@ -568,8 +624,8 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 
 前提：
 
-- Windows 或 Linux
-- 已构建对应平台的 native widget 库（Windows 为 `.dll`，Linux 为 `.so`）
+- Windows、Linux 或 macOS
+- 已构建对应平台的 native widget 库（Windows 为 `.dll`，Linux 为 `.so`，macOS 为 `.dylib`）
 - 运行时可以成功加载该库
 
 ## 11. 这个仓库当前的几个重要边界
@@ -577,7 +633,7 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 这些点建议在接项目时一开始就知道：
 
 - 当前公开支持的地图源类型只有 `osmand_obf`
-- native widget 支持 Windows 和 Linux；Linux 构建会产出 `.so`，并且是生产可用的
+- native widget 支持 Windows、Linux 和 macOS；Linux 构建会产出 `.so`，macOS 构建会产出 `.dylib`
 - `MapWidget` / `MapGLWidget` 构造参数里的 `tile_root`、`style_path` 现在只是兼容字段，真正应通过 `MapSourceSpec` 配置
 - `set_city_annotations()` 和 `city_at()` 目前更多是兼容保留接口，不是完整的标注系统
 - SDK 现在没有现成的高层业务 overlay API，标记和面板建议由你自己的 Qt 层处理
@@ -587,7 +643,7 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 另外还有一个需要特别注意的点：
 
 - Python helper 路径可以通过 `MapSourceSpec.helper_command` 显式传入
-- 但 native widget 库路径不在 `MapSourceSpec` 中，目前通过默认仓库位置或 `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` 解析（Windows 为 `.dll`，Linux 为 `.so`）
+- 但 native widget 库路径不在 `MapSourceSpec` 中，目前通过默认仓库位置或 `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` 解析（Windows 为 `.dll`，Linux 为 `.so`，macOS 为 `.dylib`）
 
 如果你想做独立部署，这一点很重要。
 
@@ -602,8 +658,8 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 
 排查顺序：
 
-1. 先确认你已经执行过 `build_helper.ps1`
-2. 再确认 `tools/osmand_render_helper_native/dist/osmand_render_helper.exe` 存在
+1. 先确认你已经执行过对应平台的构建脚本：Windows 用 `build_helper.ps1`，Linux 用 `build_linux.sh`，macOS 用 `build_macos.sh`
+2. 再确认 helper 存在：Windows 为 `tools/osmand_render_helper_native/dist/osmand_render_helper.exe`，Linux 为 `tools/osmand_render_helper_native/dist-linux/osmand_render_helper`，macOS 为 `tools/osmand_render_helper_native/dist-macosx/osmand_render_helper`
 3. 如果 helper 不在默认位置，就设置 `IPHOTO_OSMAND_RENDER_HELPER`
 
 ### 12.2 提示 `.obf`、resources 或 style 不存在
@@ -618,11 +674,19 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 
 建议直接改成绝对路径，不要依赖当前工作目录。
 
-### 12.3 native widget DLL 找不到或加载失败
+如果错误提示 `.obf` 是 Git LFS pointer，请执行：
+
+```bash
+git lfs pull
+```
+
+仓库自带的 `World_basemap_2.obf` 应该是数百 MB，而不是一个很小的文本文件。
+
+### 12.3 native widget 库找不到或加载失败
 
 优先检查：
 
-1. 是否已经为当前平台构建 native widget（Windows：`build_native_widget_msvc.ps1`，Linux：`build_linux.sh`）
+1. 是否已经为当前平台构建 native widget（Windows：`build_native_widget_msvc.ps1`，Linux：`build_linux.sh`，macOS：`build_macos.sh`）
 2. `IPHOTO_OSMAND_NATIVE_WIDGET_LIBRARY` 是否指向真实库文件
 3. Qt / PySide6 / 依赖项是否都在当前平台可搜索路径里
 
@@ -630,9 +694,9 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 
 重点检查：
 
-- `IPHOTO_OSMAND_QT_ROOT`
-- `IPHOTO_OSMAND_MINGW_ROOT`
-- helper 所在目录里是否带齐运行时 DLL
+- Windows 下检查 `IPHOTO_OSMAND_QT_ROOT`、`IPHOTO_OSMAND_MINGW_ROOT`，以及 helper 所在目录里是否带齐运行时 DLL
+- Linux 下检查 Qt6 lib 路径和 helper 可执行权限
+- macOS 下确认真实 Git LFS `.obf` 已下载，并用 `QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh` 重新构建
 
 ### 12.5 地图能显示，但我想换成自己的地图风格
 
@@ -648,12 +712,13 @@ helper 启动时还会尝试自动补齐 Qt 和 MinGW 的 DLL 搜索路径。如
 2. 业务程序里显式构造 `MapSourceSpec`
 3. 所有路径都用绝对路径
 4. 初期统一使用 `MapGLWidget`
-5. 真正需要 native widget 时，再针对 Windows 版本单独启用
+5. helper-backed 路径跑通后，再按目标平台启用 `NativeOsmAndWidget`
 
 如果你只是想快速验证想法，最简单的路线就是：
 
-1. `python -m pip install -e .`
-2. `build_helper.ps1`
-3. `MapGLWidget()` 直接嵌到你的 `QMainWindow`
+1. `git lfs pull`
+2. `python -m pip install -e .`
+3. Windows 运行 `build_helper.ps1`，Linux 运行 `build_linux.sh`，macOS 运行 `QT_ROOT=/opt/homebrew/opt/qt JOBS=4 bash tools/osmand_render_helper_native/build_macos.sh`
+4. `MapGLWidget()` 直接嵌到你的 `QMainWindow`
 
 这条路径最短，也最容易定位问题。
