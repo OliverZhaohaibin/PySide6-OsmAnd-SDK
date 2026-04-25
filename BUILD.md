@@ -261,6 +261,36 @@ def _prepare_qt_runtime_for_maps() -> None:
         os.environ.setdefault("QT_XCB_GL_INTEGRATION", "xcb_glx")
 ```
 
+Keep the following Linux runtime rules in mind when changing the native widget:
+
+- A source checkout and a packaged/frozen app are different runtime targets. A
+  preview that works from `python src/maps/main.py` does not prove a Nuitka
+  bundle will survive opening the native map widget.
+- For packaged Linux apps, force `QT_QPA_PLATFORM=xcb` before `QApplication`
+  unless you are deliberately testing a Wayland opt-out path. This avoids the
+  late `Failed to initialize GLEW: GLX 1.2 and up are not supported` failure
+  when the map section is opened.
+- Do not trust a generic Qt OpenGL probe as the only native-widget gate.
+  Always keep `probe_native_widget_runtime(...)` in the decision path so the
+  app can prefer the native widget only when its shared library actually loads,
+  and fall back cleanly otherwise.
+- The C++ bridge should request an explicit OpenGL-capable surface format. The
+  current implementation sets the widget format from `QSurfaceFormat::defaultFormat()`
+  and raises depth/stencil minima before `setFormat(...)`; keep that in place
+  unless you have a stronger platform-specific reason to change it.
+- After editing `tools/osmand_render_helper_native/src/osmand_native_map_widget.cpp`,
+  rebuild the checked-in Linux artifacts under
+  `tools/osmand_render_helper_native/dist-linux/` so the repository binaries
+  match the source change.
+- When validating Linux fixes, test both `python src/maps/main.py --backend native`
+  and the final packaged application that embeds the widget. The regression only
+  counts as fixed when the packaged UI can switch into the map view without the
+  GLEW/GLX error.
+
+If you consume this SDK from another project, carry the same startup guard into
+that host application's entry point. The native widget's Linux assumptions are
+not automatically repaired by embedding the library alone.
+
 If you are not using the native widget on Linux, the helper-backed Python backend remains the safer default.
 
 **Build output permissions or missing `.so` files**

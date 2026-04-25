@@ -22,6 +22,7 @@
 #include <QPointer>
 #include <QStandardPaths>
 #include <QStringList>
+#include <QSurfaceFormat>
 #include <QThread>
 #include <QtGlobal>
 #include <QWheelEvent>
@@ -129,6 +130,17 @@ bool writeImageAsPng(const sk_sp<const SkImage>& image, const QString& outputPat
     return bytesWritten == encodedImage->size();
 }
 
+QSurfaceFormat nativeWidgetSurfaceFormat()
+{
+    auto format = QSurfaceFormat::defaultFormat();
+    format.setRenderableType(QSurfaceFormat::OpenGL);
+    if (format.depthBufferSize() < 24)
+        format.setDepthBufferSize(24);
+    if (format.stencilBufferSize() < 8)
+        format.setStencilBufferSize(8);
+    return format;
+}
+
 std::shared_ptr<const OsmAnd::TextRasterizer> createEmbeddedOnlyTextRasterizer()
 {
     return std::make_shared<OsmAnd::TextRasterizer>(
@@ -194,6 +206,7 @@ OsmAndNativeMapWidget::OsmAndNativeMapWidget(const Configuration& configuration,
     , _configuration(configuration)
     , _interactionTimer(this)
 {
+    setFormat(nativeWidgetSurfaceFormat());
     _interactionTimer.setSingleShot(true);
     _interactionTimer.setInterval(kInteractionSettleDelayMs);
     connect(&_interactionTimer, &QTimer::timeout, this, &OsmAndNativeMapWidget::finishInteractiveRendering);
